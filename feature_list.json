@@ -1,0 +1,112 @@
+{
+  "$comment": [
+    "Source de verite machine de l'etat du projet.",
+    "Etats autorises: not_started | active | blocked | passing.",
+    "Une feature ne passe a 'passing' QUE si sa commande 'verification' s'execute avec succes.",
+    "Cette transition est irreversible: une feature 'passing' ne redevient jamais 'active'.",
+    "Si une regression casse une feature 'passing', on ouvre une NOUVELLE feature de correction.",
+    "Invariant: au plus une feature 'active' a la fois (WIP = 1)."
+  ],
+  "project": "PixaBoost",
+  "goal": "Reconstruire une piece photographiee en GLB fidele, usage visualisation/catalogue.",
+  "features": [
+    {
+      "id": "F00",
+      "sprint": 0,
+      "behavior": "Le depot s'installe depuis zero et le gate CPU complet est vert en moins de 60 s, avec au moins un test qui s'execute reellement.",
+      "verification": "uv run poe setup && uv run poe check",
+      "state": "active",
+      "evidence": null
+    },
+    {
+      "id": "F01",
+      "sprint": 0,
+      "behavior": "docs/pixal3d-internals.md repond par oui ou non, preuves fichier:ligne a l'appui, a la question: le chemin multi-vues de Pixal3D est-il expose a l'utilisateur, et sous quelle signature ?",
+      "verification": "uv run pytest tests/unit/test_pixal3d_contract.py",
+      "state": "not_started",
+      "evidence": null,
+      "note": "Inconnue n°1 du projet. Se tranche par lecture de code, sans GPU. Conditionne l'ampleur de F10."
+    },
+    {
+      "id": "F02",
+      "sprint": 0,
+      "behavior": "core/geometry.py fournit Sim3 (composition, inverse, application), intrinseques camera, projection et back-projection, valides contre des identites analytiques.",
+      "verification": "uv run pytest tests/unit/test_geometry.py",
+      "state": "not_started",
+      "evidence": null
+    },
+    {
+      "id": "F03",
+      "sprint": 0,
+      "behavior": "core/metrics.py et core/render.py fournissent IoU de silhouette, F-score@tau, Chamfer bidirectionnel et rendu offscreen de vues held-out, valides contre des verites terrain analytiques.",
+      "verification": "uv run pytest tests/unit/test_metrics.py tests/unit/test_render.py",
+      "state": "not_started",
+      "evidence": null
+    },
+    {
+      "id": "F04",
+      "sprint": 0,
+      "behavior": "Un test architectural echoue si un module de core/ importe torch, ouvre une socket, ou touche au GPU.",
+      "verification": "uv run pytest tests/unit/test_architecture.py",
+      "state": "not_started",
+      "evidence": null
+    },
+    {
+      "id": "F05",
+      "sprint": 0,
+      "behavior": "Le benchmark synthetique rend des meshes CAO sous N vues et produit, pour chaque objet: images, masques, poses GT, intrinseques GT et mesh GT.",
+      "verification": "uv run poe bench-build && uv run pytest tests/integration/test_benchmark.py",
+      "state": "not_started",
+      "evidence": null
+    },
+    {
+      "id": "F06",
+      "sprint": 0,
+      "behavior": "L'image Docker GPU (TRELLIS.2 + NATTEN + utils3d + Pixal3D) est construite par GitHub Actions et poussee sur GHCR.",
+      "verification": "gh run list --workflow=gpu-image.yml --limit 1 --json conclusion, puis docker pull de l'image publiee",
+      "state": "not_started",
+      "evidence": null
+    },
+    {
+      "id": "F07",
+      "sprint": 0,
+      "behavior": "Une image envoyee a un pod RunPod revient sous forme de GLB valide, mis en cache dans artifacts/ et non regenere au second appel.",
+      "verification": "uv run pytest tests/e2e/test_smoke_single_view.py -m gpu",
+      "state": "not_started",
+      "evidence": null
+    },
+    {
+      "id": "F10",
+      "sprint": 1,
+      "behavior": "N images plus leurs poses produisent un GLB unique via le chemin multi-vues de Pixal3D (wrapper si expose, sinon agregation par back-projection implementee par nous).",
+      "verification": "uv run pytest tests/e2e/test_multiview.py -m gpu",
+      "state": "not_started",
+      "evidence": null
+    },
+    {
+      "id": "F11",
+      "sprint": 1,
+      "behavior": "Un score de confiance de recalage est calcule, et une pose sous le seuil provoque un refus explicite plutot qu'une reconstruction degradee.",
+      "verification": "uv run pytest tests/unit/test_registration.py",
+      "state": "not_started",
+      "evidence": null
+    },
+    {
+      "id": "F12",
+      "sprint": 1,
+      "behavior": "Un tableau chiffre compare B0 (meilleure vue seule) et B1 (multi-vues natif) sur le benchmark, avec metriques P1/P2 et planche de rendus comparatifs.",
+      "verification": "uv run poe bench-compare",
+      "state": "not_started",
+      "evidence": null
+    },
+    {
+      "id": "F13",
+      "sprint": 1,
+      "behavior": "GATE DE DECISION. Une ADR dans DECISIONS.md statue: B1 passe la barre catalogue (-> Sprint 3), ou B1 echoue avec un diagnostic d'erreur qui dit si le Sprint 2 est pertinent.",
+      "verification": "Presence d'une ADR 'F13' dans DECISIONS.md citant runs/<ts>/metrics.json",
+      "state": "not_started",
+      "evidence": null,
+      "note": "Aucune feature de Sprint 2 ne peut passer a 'active' avant que F13 soit 'passing'."
+    }
+  ]
+}

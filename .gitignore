@@ -1,0 +1,36 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Harness runtime state
+runs/*
+!runs/.gitkeep
+artifacts/*
+!artifacts/.gitkeep
+
+# Model weights and benchmark data are never committed (26 GB+)
+weights/
+data/
+*.glb
+*.npz
+*.ckpt
+*.safetensors
+!tests/**/*.glb
+
+# Secrets
+.env
+.env.*
+!.env.example
+
+# OS / editors
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

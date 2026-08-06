@@ -1,0 +1,12 @@
+# Normalise les fins de ligne en LF dans le depot. Sans cela, un Makefile ou un
+# script shell edite depuis Windows arrive en CRLF sur Linux/CI et casse.
+* text=auto eol=lf
+
+Makefile text eol=lf
+*.sh text eol=lf
+
+*.png binary
+*.jpg binary
+*.glb binary
+*.npz binary
+*.ply binary
