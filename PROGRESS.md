@@ -6,23 +6,37 @@
 ## Etat verifie
 
 - **Sprint** : 0 (harness minimal + spike de lecture de code)
-- **Feature active** : F00 — squelette du depot et gate CPU
-- **Dernier gate vert** : `uv run poe check` — lint + mypy strict + 2 tests, **1,1 s**
-- **Commit** : _(aucun commit encore)_
+- **Features `passing`** : F00, F01
+- **Feature active** : F02 — `core/geometry.py`
+- **Dernier gate vert** : `uv run poe check` — ruff + mypy strict + **9 tests**, **1,15 s**
 
 ## Fait
 
-- Depot git initialise sur `main`.
-- Environnement CPU reproductible : `uv` + Python 3.11 pinne, `pyproject.toml`, verrou `uv.lock`.
-- Surface de commandes stable : `uv run poe {setup,lint,fmt,typecheck,test,check}`,
-  plus un `Makefile` delegateur pour Linux/CI/RunPod (ADR-0002).
-- Squelette de paquet : `core/`, `backends/`, CLI, plus un test exemple qui s'execute reellement.
-- Artefacts de harness : `CLAUDE.md`, `AGENTS.md`, `feature_list.json`, `DECISIONS.md`,
-  `docs/methodology.md`, `docs/testing.md`.
+**F00 — harness.** Depot git sur `main`. Environnement CPU reproductible : `uv` + Python 3.11
+pinne, `uv.lock` commite. Surface de commandes `uv run poe {setup,lint,fmt,typecheck,test,check}`
+plus un `Makefile` delegateur (ADR-0002). Squelette `core/` + `backends/`, CLI, CI CPU GitHub
+Actions, `.gitattributes` pour forcer les fins de ligne en LF.
+
+**F01 — spike Pixal3D.** Submodule `vendor/pixal3d` pinne sur `cdbb2bb`. Verdict ecrit dans
+`docs/pixal3d-internals.md`, verrouille par 7 tests de contrat en analyse statique `ast`
+(donc sans torch, et qui servent de detecteur de derive si on bouge le SHA).
+
+## Ce que F01 a etabli — a lire avant F10
+
+**Le multi-vues n'est pas expose, il est bloque** par un `assert transform_matrix is None`
+(`image_conditioned_proj.py:211`). Le « 2 views by default » du README amont est de
+l'echantillonnage a l'entrainement, pas du conditionnement multi-vues.
+
+Deux consequences, actees en ADR-0005 :
+1. **F10 devient une implementation**, pas un wrapper. Mais l'intervention reste chirurgicale :
+   la plomberie mathematique existe deja et accepte une camera arbitraire.
+2. **H1 est plus fragile qu'anticipe.** Le checkpoint publie est entraine en mono-vue a camera
+   fixe ; un volume de features moyenne sur N vues est hors distribution pour ces poids. F12
+   devra mesurer une variante de repli en plus de B1.
 
 ## En cours
 
-Rien. F00 est en attente de sa verification finale et de son commit.
+F02 — `core/geometry.py`. Rien d'ecrit encore.
 
 ## Bloque
 
@@ -30,16 +44,18 @@ Rien.
 
 ## Prochaine action
 
-**F01 — spike de lecture de code sur Pixal3D.** Cloner le depot en `vendor/pixal3d/` (pinne sur
-un SHA), localiser le chemin de back-projection, et repondre dans `docs/pixal3d-internals.md` a :
-le multi-vues est-il expose a l'utilisateur, sous quelle signature, avec quelle convention
-d'intrinseques et d'extrinseques ?
+**F02, en TDD strict.** Ecrire d'abord `tests/unit/test_geometry.py` et le constater rouge.
+Les conventions a implementer sont relevees dans `docs/pixal3d-internals.md` (section « Modele
+de camera ») : convention Blender, camera selon `-Z`, capteur 32 mm, focale `16/tan(fov/2)`,
+grille dans `[-1,1]` tournee par `[[1,0,0],[0,0,-1],[0,1,0]]`.
 
-Cette question ne demande **ni GPU ni poids de modele** — uniquement de la lecture. Elle
-conditionne l'ampleur de F10, donc elle passe avant tout le reste.
+Assertions analytiques attendues : un Sim3 compose de son inverse donne l'identite ; projeter
+puis back-projeter un point a sa profondeur connue redonne le point de depart.
 
 ## Notes pour la session suivante
 
-- `docker` et `make` ne sont pas installes sur la machine de dev (Windows). C'est assume :
-  l'image GPU se construit en CI, et `poe` remplace `make` en local.
+- `docker` et `make` ne sont pas installes sur la machine de dev (Windows). Assume : l'image GPU
+  se construit en CI, `poe` remplace `make` en local.
 - Aucun GPU local. Tout ce qui touche au GPU passe par RunPod et doit remplir `artifacts/`.
+- Cout Pixal3D releve en F01 : ~18 Go de VRAM en standard, ~10-12 Go en `--low_vram`.
+  A prendre en compte pour le choix de GPU RunPod en F06/F07.

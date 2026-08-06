@@ -77,6 +77,40 @@ en CI gratuite. On preserve la contrainte plutot que de l'affaiblir pour une seu
 
 ---
 
+## ADR-0005 — Le multi-vues doit etre implemente, et H1 est plus fragile qu'anticipe
+
+**Date** : 2026-08-06 · **Statut** : accepte · **Origine** : spike F01
+
+**Constat.** Le multi-vues de Pixal3D n'est pas expose : un `assert transform_matrix is None`
+(`image_conditioned_proj.py:211`) force toute back-projection sur une camera front-view fixe. Le
+« 2 views by default » du README amont designe un **echantillonnage a l'entrainement** — un
+`view_idx` tire au hasard parmi deux rendus — pas un conditionnement multi-vues. Details et
+preuves dans `docs/pixal3d-internals.md`.
+
+**Decision 1.** F10 implemente le chemin multi-vues par sous-classement dans
+`backends/pixal3d.py` : lever l'`assert`, recuperer le `valid_mask` jete en amont, et faire une
+**moyenne masquee** par voxel sur N vues. `vendor/` reste intouche (contrainte n°6).
+L'intervention est chirurgicale : `project_points_to_image_batch` accepte deja une matrice de
+camera arbitraire, et le parametre est cable de bout en bout.
+
+**Decision 2.** Le plan est amende : le checkpoint publie a ete entraine en conditionnement
+**mono-vue a camera fixe**. Un volume de features moyenne sur plusieurs vues est donc **hors
+distribution** pour ces poids. Rien dans le code publie ne prouve que *ces poids-la* ont vu ce
+cas ; les resultats multi-vues du papier viennent peut-etre d'une variante non publiee.
+
+**Consequence.** L'hypothese H1 (« B1 bat B0 ») est nettement plus fragile qu'estime au moment du
+plan. F12 doit donc mesurer B1 **et** une variante de repli — une seule vue conditionne, les
+autres ne servant qu'au recalage et a la texture — avant de conclure quoi que ce soit au gate F13.
+
+**Ce que cela ne change pas.** L'ordre reste le bon : mesurer avant de construire. Si le
+multi-vues natif s'avere inexploitable sur ces poids, c'est precisement le genre de diagnostic
+qui debloque le Sprint 2 — et on l'aura obtenu pour le cout d'une lecture de code, pas d'un
+pipeline de fusion complet.
+
+**Reexamen.** Au gate F13.
+
+---
+
 ## ADR-0004 — Python 3.11
 
 **Date** : 2026-08-06 · **Statut** : accepte

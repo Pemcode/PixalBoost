@@ -1,0 +1,3 @@
+[submodule "vendor/pixal3d"]
+	path = vendor/pixal3d
+	url = https://github.com/TencentARC/Pixal3D.git

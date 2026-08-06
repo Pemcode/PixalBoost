@@ -15,25 +15,26 @@
       "sprint": 0,
       "behavior": "Le depot s'installe depuis zero et le gate CPU complet est vert en moins de 60 s, avec au moins un test qui s'execute reellement.",
       "verification": "uv run poe setup && uv run poe check",
-      "state": "active",
-      "evidence": null
+      "state": "passing",
+      "evidence": "commit 63d40d7 — ruff OK, mypy strict OK (4 fichiers), pytest 2 passed, 1,07 s"
     },
     {
       "id": "F01",
       "sprint": 0,
       "behavior": "docs/pixal3d-internals.md repond par oui ou non, preuves fichier:ligne a l'appui, a la question: le chemin multi-vues de Pixal3D est-il expose a l'utilisateur, et sous quelle signature ?",
       "verification": "uv run pytest tests/unit/test_pixal3d_contract.py",
-      "state": "not_started",
-      "evidence": null,
-      "note": "Inconnue n°1 du projet. Se tranche par lecture de code, sans GPU. Conditionne l'ampleur de F10."
+      "state": "passing",
+      "evidence": "7 tests de contrat verts. Verdict: NON, le multi-vues est bloque par un assert (image_conditioned_proj.py:211). Voir docs/pixal3d-internals.md et ADR-0005.",
+      "note": "Inconnue n°1 levee. F10 devient une implementation, pas un wrapper."
     },
     {
       "id": "F02",
       "sprint": 0,
       "behavior": "core/geometry.py fournit Sim3 (composition, inverse, application), intrinseques camera, projection et back-projection, valides contre des identites analytiques.",
       "verification": "uv run pytest tests/unit/test_geometry.py",
-      "state": "not_started",
-      "evidence": null
+      "state": "active",
+      "evidence": null,
+      "note": "Doit implementer la convention Blender relevee en F01: camera selon -Z, capteur 32 mm, focale 16/tan(fov/2)."
     },
     {
       "id": "F03",
@@ -78,10 +79,11 @@
     {
       "id": "F10",
       "sprint": 1,
-      "behavior": "N images plus leurs poses produisent un GLB unique via le chemin multi-vues de Pixal3D (wrapper si expose, sinon agregation par back-projection implementee par nous).",
+      "behavior": "N images plus leurs poses produisent un GLB unique. Implique de sous-classer ProjGrid pour lever l'assert sur transform_matrix, recuperer valid_mask, et faire une moyenne masquee par voxel sur N vues. Inclut la variante de repli (une vue conditionne, les autres recalent).",
       "verification": "uv run pytest tests/e2e/test_multiview.py -m gpu",
       "state": "not_started",
-      "evidence": null
+      "evidence": null,
+      "note": "Portee revue apres F01: implementation, pas wrapper. Risque OOD sur le checkpoint, voir ADR-0005."
     },
     {
       "id": "F11",
