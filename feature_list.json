@@ -67,17 +67,20 @@
       "id": "F06",
       "sprint": 0,
       "behavior": "L'image Docker GPU (TRELLIS.2 + NATTEN + utils3d + Pixal3D) est construite par GitHub Actions et poussee sur GHCR.",
-      "verification": "gh run list --workflow=gpu-image.yml --limit 1 --json conclusion, puis docker pull de l'image publiee",
-      "state": "not_started",
-      "evidence": null
+      "verification": "Le run gpu-image le plus recent a conclusion == success, et le manifeste de ghcr.io/pemcode/pixalboost:gpu-latest est recuperable depuis le registre",
+      "state": "active",
+      "evidence": null,
+      "note": "docker n'est pas installe en local, donc la verification porte sur le manifeste publie plutot que sur un docker pull. Premier run echoue: GHCR refuse les majuscules du login proprietaire."
     },
     {
       "id": "F07",
       "sprint": 0,
       "behavior": "Une image envoyee a un pod RunPod revient sous forme de GLB valide, mis en cache dans artifacts/ et non regenere au second appel.",
-      "verification": "uv run pytest tests/e2e/test_smoke_single_view.py -m gpu",
-      "state": "not_started",
-      "evidence": null
+      "verification": "RUNPOD_ENDPOINT_ID=<id> uv run pytest tests/e2e/test_smoke_single_view.py -m gpu",
+      "state": "blocked",
+      "evidence": null,
+      "blocked_on": "Aucun endpoint RunPod deploye. Necessite: F06 passing, un network volume pour les ~26 Go de poids, et l'accord de l'utilisateur sur la depense GPU.",
+      "note": "Le code est ecrit et couvert par 40 tests CPU (cache, client, adaptateur). Seule la verification reelle manque, donc la feature n'est pas faite."
     },
     {
       "id": "F10",
