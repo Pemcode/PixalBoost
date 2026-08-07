@@ -50,16 +50,18 @@
       "sprint": 0,
       "behavior": "Un test architectural echoue si un module de core/ importe torch, ouvre une socket, ou touche au GPU.",
       "verification": "uv run pytest tests/unit/test_architecture.py",
-      "state": "active",
-      "evidence": null
+      "state": "passing",
+      "evidence": "commit F04 — 24 tests verts. Detection statique (ast), donc les imports paresseux en corps de fonction sont couverts. Garde-fou verifie par injection d'une violation reelle dans core/: les 3 detecteurs se declenchent.",
+      "note": "Couvre aussi le sens des dependances (core/ n'importe pas backends/) et l'absence d'alea global implicite."
     },
     {
       "id": "F05",
       "sprint": 0,
       "behavior": "Le benchmark synthetique rend des meshes CAO en 6 azimuts x 3 elevations (+45, 0, -45 deg), soit 18 vues, et produit pour chaque objet: images, masques, poses GT, intrinseques GT et mesh GT.",
       "verification": "uv run poe bench-build && uv run pytest tests/integration/test_benchmark.py",
-      "state": "not_started",
-      "evidence": null
+      "state": "active",
+      "evidence": null,
+      "note": "La geometrie de prise de vue doit reproduire celle des photos reelles: 6 azimuts x 3 elevations (+45/0/-45)."
     },
     {
       "id": "F06",
