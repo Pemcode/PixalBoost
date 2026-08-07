@@ -1,0 +1,72 @@
+# Pixal3D inference image.
+#
+# Built once in CI and reused everywhere (RunPod pods, serverless workers). The
+# upstream environment is hostile to reproduce by hand -- see docs/gpu-runtime.md.
+#
+# Two decisions worth knowing before editing:
+#
+#  1. `runtime`, not `devel`. Every CUDA extension Pixal3D needs (natten,
+#     flash_attn_3, o_voxel, flex_gemm, cumesh, nvdiffrast) ships as a prebuilt
+#     wheel in vendor/pixal3d/requirements-hfdemo.txt. Nothing is compiled here,
+#     so no nvcc is needed and the build takes minutes rather than an hour.
+#  2. Those wheels are `cp310`, so the interpreter must be Python 3.10 exactly.
+#     Ubuntu 22.04 ships 3.10 as its system python, which is why this base is
+#     pinned to 22.04 rather than something newer.
+#
+# Model weights (~26 GB) are NOT baked in. They live on a network volume and are
+# fetched into HF_HOME at runtime; baking them would make the image unpushable.
+
+FROM nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True \
+    ATTN_BACKEND=flash_attn \
+    OPENCV_IO_ENABLE_OPENEXR=1 \
+    HF_HOME=/runpod-volume/huggingface
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        python3.10 \
+        python3.10-dev \
+        python3-pip \
+        git \
+        ca-certificates \
+        libgl1 \
+        libglib2.0-0 \
+        libegl1 \
+        libgles2 \
+        libx11-6 \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /opt/pixaboost
+
+# Dependency layer first: it is the expensive one and changes far less often
+# than our own code, so it stays cached across builds.
+COPY vendor/pixal3d/requirements-hfdemo.txt ./requirements-hfdemo.txt
+RUN python3 -m pip install --no-cache-dir --upgrade pip setuptools wheel \
+    && python3 -m pip install --no-cache-dir -r requirements-hfdemo.txt \
+    && python3 -m pip install --no-cache-dir \
+        "https://github.com/LDYang694/Storages/releases/download/20260430/utils3d-0.0.2-py3-none-any.whl" \
+        runpod==1.7.7
+
+# Pinned upstream source, copied read-only. Adaptations live in our own
+# backends/, never in here -- hard constraint 6 in CLAUDE.md.
+COPY vendor/pixal3d/ /opt/pixal3d/
+COPY docker/handler.py ./handler.py
+
+# Stamped into every job result, so a cached artefact can always be traced back
+# to the exact upstream revision that produced it.
+ARG PIXAL3D_SHA=unknown
+ENV PYTHONPATH=/opt/pixal3d \
+    PIXAL3D_SHA=${PIXAL3D_SHA}
+
+# Fail the build rather than a GPU-hour if an extension is missing. This runs on
+# a CPU runner, so it only imports -- it never touches a device.
+RUN python3 -c "\
+import importlib, sys; \
+mods = ['torch', 'natten', 'o_voxel', 'flex_gemm', 'cumesh', 'trimesh', 'transformers', 'runpod', 'utils3d']; \
+missing = [m for m in mods if importlib.util.find_spec(m) is None]; \
+sys.exit('missing modules: ' + repr(missing)) if missing else print('all extensions present')"
+
+CMD ["python3", "-u", "handler.py"]

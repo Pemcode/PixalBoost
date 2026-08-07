@@ -24,9 +24,12 @@ data/
 *.safetensors
 !tests/**/*.glb
 
-# Secrets
+# Secrets. Broad on purpose: `.env` alone would not have caught `runpod.env`.
 .env
 .env.*
+*.env
+*.key
+*secret*
 !.env.example
 
 # OS / editors

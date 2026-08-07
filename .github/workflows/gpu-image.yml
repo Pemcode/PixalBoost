@@ -1,0 +1,72 @@
+name: gpu-image
+
+# Builds the Pixal3D inference image once and publishes it to GHCR, so that
+# pods and serverless workers all start from the same bytes. Runs on a CPU
+# runner: nothing here compiles CUDA code or needs a device.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "docker/**"
+      - "vendor/pixal3d"
+      - ".github/workflows/gpu-image.yml"
+
+env:
+  IMAGE: ghcr.io/${{ github.repository_owner }}/pixalboost
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      # The runner ships with ~14 GB free; this image needs more than that.
+      - name: Reclaim disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
+                      /usr/local/share/boost "$AGENT_TOOLSDIRECTORY"
+          sudo docker image prune --all --force
+          df -h /
+
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Record the pinned upstream revision
+        id: vendor
+        run: echo "sha=$(git -C vendor/pixal3d rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile.gpu
+          push: true
+          provenance: false
+          tags: |
+            ${{ env.IMAGE }}:gpu-latest
+            ${{ env.IMAGE }}:gpu-${{ github.sha }}
+          build-args: |
+            PIXAL3D_SHA=${{ steps.vendor.outputs.sha }}
+
+      - name: Report what was published
+        run: |
+          echo "### Image published" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          echo "${{ env.IMAGE }}:gpu-latest" >> "$GITHUB_STEP_SUMMARY"
+          echo "${{ env.IMAGE }}:gpu-${{ github.sha }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "pixal3d ${{ steps.vendor.outputs.sha }}" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
