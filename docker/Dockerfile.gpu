@@ -54,6 +54,7 @@ RUN python3 -m pip install --no-cache-dir --upgrade pip setuptools wheel \
 # backends/, never in here -- hard constraint 6 in CLAUDE.md.
 COPY vendor/pixal3d/ /opt/pixal3d/
 COPY docker/handler.py ./handler.py
+COPY docker/verify_extensions.py ./verify_extensions.py
 
 # Stamped into every job result, so a cached artefact can always be traced back
 # to the exact upstream revision that produced it.
@@ -61,12 +62,7 @@ ARG PIXAL3D_SHA=unknown
 ENV PYTHONPATH=/opt/pixal3d \
     PIXAL3D_SHA=${PIXAL3D_SHA}
 
-# Fail the build rather than a GPU-hour if an extension is missing. This runs on
-# a CPU runner, so it only imports -- it never touches a device.
-RUN python3 -c "\
-import importlib, sys; \
-mods = ['torch', 'natten', 'o_voxel', 'flex_gemm', 'cumesh', 'trimesh', 'transformers', 'runpod', 'utils3d']; \
-missing = [m for m in mods if importlib.util.find_spec(m) is None]; \
-sys.exit('missing modules: ' + repr(missing)) if missing else print('all extensions present')"
+# Fail the build rather than a billed GPU-hour if a dependency is missing.
+RUN python3 verify_extensions.py
 
 CMD ["python3", "-u", "handler.py"]

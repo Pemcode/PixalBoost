@@ -66,6 +66,21 @@ jobs:
           build-args: |
             PIXAL3D_SHA=${{ steps.vendor.outputs.sha }}
 
+      # Actions logs need authentication even on a public repo, but check-run
+      # annotations are readable anonymously. Replaying the build from cache is
+      # cheap and puts the failing step's own output somewhere diagnosable.
+      - name: Surface the build failure
+        if: failure()
+        run: |
+          set +e
+          tail=$(docker buildx build \
+                   --file docker/Dockerfile.gpu \
+                   --progress=plain \
+                   --output type=cacheonly \
+                   . 2>&1 | tail -n 40)
+          echo "$tail"
+          echo "::error title=gpu-image build failed::${tail//$'\n'/ | }"
+
       - name: Report what was published
         run: |
           echo "### Image published" >> "$GITHUB_STEP_SUMMARY"
