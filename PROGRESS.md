@@ -52,6 +52,19 @@ grille dans `[-1,1]` tournee par `[[1,0,0],[0,0,-1],[0,1,0]]`.
 Assertions analytiques attendues : un Sim3 compose de son inverse donne l'identite ; projeter
 puis back-projeter un point a sa profondeur connue redonne le point de depart.
 
+## Jeu de photos reelles disponible
+
+L'utilisateur dispose d'une serie de **18 photos** d'une **piece metallique mate** :
+**6 azimuts x 3 elevations** (+45 deg, 0 deg, -45 deg). Elles seront ajoutees au depot le moment
+venu (probablement en amont de F12).
+
+**Consequence actee sur F05** : le benchmark synthetique doit rendre **exactement cette geometrie
+de prise de vue** (6 x 3 = 18 vues). Sans cela, la comparaison synthetique -> reel melange l'effet
+du domaine et l'effet du protocole de capture, et ne mesure plus rien d'interpretable.
+
+Piece **mate** : c'est une bonne nouvelle. Les reflets speculaires sont le pire cas pour
+l'estimation de pose comme pour le detourage ; une surface mate les evite en grande partie.
+
 ## Notes pour la session suivante
 
 - `docker` et `make` ne sont pas installes sur la machine de dev (Windows). Assume : l'image GPU

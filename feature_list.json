@@ -32,16 +32,16 @@
       "sprint": 0,
       "behavior": "core/geometry.py fournit Sim3 (composition, inverse, application), intrinseques camera, projection et back-projection, valides contre des identites analytiques.",
       "verification": "uv run pytest tests/unit/test_geometry.py",
-      "state": "active",
-      "evidence": null,
-      "note": "Doit implementer la convention Blender relevee en F01: camera selon -Z, capteur 32 mm, focale 16/tan(fov/2)."
+      "state": "passing",
+      "evidence": "commit F02 — 20 tests analytiques verts. Sim3 (compose/inverse/matrice), camera Blender, projection/back-projection inversibles, grille canonique.",
+      "note": "Convention Blender de F01 implementee: camera selon -Z, capteur 32 mm, focale 16/tan(fov/2)."
     },
     {
       "id": "F03",
       "sprint": 0,
       "behavior": "core/metrics.py et core/render.py fournissent IoU de silhouette, F-score@tau, Chamfer bidirectionnel et rendu offscreen de vues held-out, valides contre des verites terrain analytiques.",
       "verification": "uv run pytest tests/unit/test_metrics.py tests/unit/test_render.py",
-      "state": "not_started",
+      "state": "active",
       "evidence": null
     },
     {
@@ -55,7 +55,7 @@
     {
       "id": "F05",
       "sprint": 0,
-      "behavior": "Le benchmark synthetique rend des meshes CAO sous N vues et produit, pour chaque objet: images, masques, poses GT, intrinseques GT et mesh GT.",
+      "behavior": "Le benchmark synthetique rend des meshes CAO en 6 azimuts x 3 elevations (+45, 0, -45 deg), soit 18 vues, et produit pour chaque objet: images, masques, poses GT, intrinseques GT et mesh GT.",
       "verification": "uv run poe bench-build && uv run pytest tests/integration/test_benchmark.py",
       "state": "not_started",
       "evidence": null
