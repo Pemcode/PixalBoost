@@ -59,9 +59,9 @@
       "sprint": 0,
       "behavior": "Le benchmark synthetique rend des meshes CAO en 6 azimuts x 3 elevations (+45, 0, -45 deg), soit 18 vues, et produit pour chaque objet: images, masques, poses GT, intrinseques GT et mesh GT.",
       "verification": "uv run poe bench-build && uv run pytest tests/integration/test_benchmark.py",
-      "state": "active",
-      "evidence": null,
-      "note": "La geometrie de prise de vue doit reproduire celle des photos reelles: 6 azimuts x 3 elevations (+45/0/-45)."
+      "state": "passing",
+      "evidence": "commit F05 — bench-build ecrit 3 pieces x 18 vues en 512 en 5,1 s; 34 tests (shapes/rig/integration) verts. Le re-rendu du mesh stocke avec la pose stockee reproduit exactement le masque stocke.",
+      "note": "Geometrie de prise de vue identique aux photos reelles: 6 azimuts x 3 elevations (+45/0/-45). az000_el+00 reproduit la camera canonique de Pixal3D."
     },
     {
       "id": "F06",

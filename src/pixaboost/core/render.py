@@ -35,13 +35,13 @@ def _validate(vertices: FloatArray, faces: IntArray) -> tuple[FloatArray, IntArr
     return vertices, faces
 
 
-def rasterise_depth(
+def _rasterise(
     vertices: FloatArray,
     faces: IntArray,
     camera_to_world: Sim3,
     camera: BlenderCamera,
-) -> FloatArray:
-    """Z-buffer the mesh, returning depth per pixel and ``inf`` where nothing was hit.
+) -> tuple[FloatArray, IntArray]:
+    """Z-buffer the mesh once, returning depth and the winning face per pixel.
 
     Triangles are drawn regardless of winding: we measure occupancy, not shading,
     and a back-facing triangle still occludes. Depth is interpolated
@@ -50,12 +50,13 @@ def rasterise_depth(
     vertices, faces = _validate(vertices, faces)
     resolution = camera.resolution
     depth_buffer = np.full((resolution, resolution), np.inf, dtype=np.float64)
+    index_buffer = np.full((resolution, resolution), -1, dtype=np.int64)
     if faces.shape[0] == 0:
-        return depth_buffer
+        return depth_buffer, index_buffer
 
     pixels, vertex_depth, _ = project(vertices, camera_to_world, camera)
 
-    for face in faces:
+    for face_index, face in enumerate(faces):
         corner_depth = vertex_depth[face]
         # Triangles crossing the camera plane need clipping to be drawn correctly;
         # nothing in this pipeline relies on it, so skip them rather than approximate.
@@ -101,10 +102,38 @@ def rasterise_depth(
         )
         candidate = np.where(inside & (inverse_depth > 0.0), 1.0 / inverse_depth, np.inf)
 
-        window = depth_buffer[min_row : max_row + 1, min_col : max_col + 1]
-        np.minimum(window, candidate, out=window)
+        rows_slice = slice(min_row, max_row + 1)
+        cols_slice = slice(min_col, max_col + 1)
+        window = depth_buffer[rows_slice, cols_slice]
+        closer = candidate < window
+        window[closer] = candidate[closer]
+        index_buffer[rows_slice, cols_slice][closer] = face_index
 
-    return depth_buffer
+    return depth_buffer, index_buffer
+
+
+def rasterise_depth(
+    vertices: FloatArray,
+    faces: IntArray,
+    camera_to_world: Sim3,
+    camera: BlenderCamera,
+) -> FloatArray:
+    """Depth per pixel, ``inf`` where nothing was hit."""
+    return _rasterise(vertices, faces, camera_to_world, camera)[0]
+
+
+def rasterise_face_index(
+    vertices: FloatArray,
+    faces: IntArray,
+    camera_to_world: Sim3,
+    camera: BlenderCamera,
+) -> IntArray:
+    """Index of the visible face per pixel, ``-1`` where nothing was hit.
+
+    Enough for a consumer to shade the surface without this module having to
+    know anything about materials or lighting.
+    """
+    return _rasterise(vertices, faces, camera_to_world, camera)[1]
 
 
 def rasterise_silhouette(

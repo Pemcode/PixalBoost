@@ -5,6 +5,7 @@ description = "Reconstruction 3D (GLB) haute fidelite d'une piece photographiee,
 requires-python = ">=3.11,<3.12"
 dependencies = [
     "numpy>=2.1",
+    "pillow>=12.3.0",
     "scipy>=1.17.1",
 ]
 
@@ -43,6 +44,7 @@ check = { sequence = [
     "typecheck",
     "test",
 ], help = "Full CPU gate. Must be green before any commit.", ignore_fail = false }
+bench-build = { cmd = "python -m pixaboost.bench.build", help = "Render the synthetic benchmark into data/bench" }
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -100,9 +100,7 @@ def test_the_core_package_is_actually_being_scanned() -> None:
 
 @pytest.mark.parametrize("path", core_modules(), ids=lambda p: p.name)
 def test_core_module_avoids_torch_gpu_and_network(path: Path) -> None:
-    offenders = imported_roots(ast.parse(path.read_text(encoding="utf-8"))) & set(
-        FORBIDDEN_IMPORTS
-    )
+    offenders = imported_roots(ast.parse(path.read_text(encoding="utf-8"))) & set(FORBIDDEN_IMPORTS)
     assert not offenders, (
         f"WHAT: {path.relative_to(REPO_ROOT)} imports {sorted(offenders)}.\n"
         f"WHY: core/ must stay pure CPU and offline -- "
