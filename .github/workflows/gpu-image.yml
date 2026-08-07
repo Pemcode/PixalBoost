@@ -13,9 +13,6 @@ on:
       - "vendor/pixal3d"
       - ".github/workflows/gpu-image.yml"
 
-env:
-  IMAGE: ghcr.io/${{ github.repository_owner }}/pixalboost
-
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -37,6 +34,13 @@ jobs:
         with:
           submodules: recursive
 
+      # GHCR rejects any uppercase in a repository name, and the owner login is
+      # mixed case. Lowercasing here rather than hardcoding keeps this working
+      # if the account is ever renamed.
+      - name: Resolve the image name
+        id: image
+        run: echo "name=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/pixalboost" >> "$GITHUB_OUTPUT"
+
       - name: Record the pinned upstream revision
         id: vendor
         run: echo "sha=$(git -C vendor/pixal3d rev-parse HEAD)" >> "$GITHUB_OUTPUT"
@@ -57,8 +61,8 @@ jobs:
           push: true
           provenance: false
           tags: |
-            ${{ env.IMAGE }}:gpu-latest
-            ${{ env.IMAGE }}:gpu-${{ github.sha }}
+            ${{ steps.image.outputs.name }}:gpu-latest
+            ${{ steps.image.outputs.name }}:gpu-${{ github.sha }}
           build-args: |
             PIXAL3D_SHA=${{ steps.vendor.outputs.sha }}
 
@@ -66,7 +70,7 @@ jobs:
         run: |
           echo "### Image published" >> "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"
-          echo "${{ env.IMAGE }}:gpu-latest" >> "$GITHUB_STEP_SUMMARY"
-          echo "${{ env.IMAGE }}:gpu-${{ github.sha }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "${{ steps.image.outputs.name }}:gpu-latest" >> "$GITHUB_STEP_SUMMARY"
+          echo "${{ steps.image.outputs.name }}:gpu-${{ github.sha }}" >> "$GITHUB_STEP_SUMMARY"
           echo "pixal3d ${{ steps.vendor.outputs.sha }}" >> "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"
