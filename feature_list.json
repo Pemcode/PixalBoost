@@ -41,15 +41,16 @@
       "sprint": 0,
       "behavior": "core/metrics.py et core/render.py fournissent IoU de silhouette, F-score@tau, Chamfer bidirectionnel et rendu offscreen de vues held-out, valides contre des verites terrain analytiques.",
       "verification": "uv run pytest tests/unit/test_metrics.py tests/unit/test_render.py",
-      "state": "active",
-      "evidence": null
+      "state": "passing",
+      "evidence": "commit F03 — 34 tests analytiques verts. Rasteriseur numpy pur (z-buffer perspective-correct), silhouette IoU, Chamfer, F-score, echantillonnage de surface pondere par l'aire.",
+      "note": "LPIPS deliberement absent de core/ (torch + telechargement de poids), voir ADR-0003."
     },
     {
       "id": "F04",
       "sprint": 0,
       "behavior": "Un test architectural echoue si un module de core/ importe torch, ouvre une socket, ou touche au GPU.",
       "verification": "uv run pytest tests/unit/test_architecture.py",
-      "state": "not_started",
+      "state": "active",
       "evidence": null
     },
     {
