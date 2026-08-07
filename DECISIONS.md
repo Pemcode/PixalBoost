@@ -77,6 +77,63 @@ en CI gratuite. On preserve la contrainte plutot que de l'affaiblir pour une seu
 
 ---
 
+## ADR-0006 — L'ICP raffine, il ne cherche pas : bassin mesure a ~20 degres
+
+**Date** : 2026-08-07 · **Statut** : accepte · **Origine** : F11
+
+**Mesure.** Sur un nuage non structure, l'ICP point-a-point converge exactement (rmse ~5e-17)
+tant que l'erreur de rotation initiale reste sous **environ 20 degres**. Au-dela il se fige dans
+un minimum local. Mesure balayee offset par offset ; le test
+`test_icp_converges_from_anywhere_inside_the_basin` verrouille le constat.
+
+**Decision 1.** L'espacement des redemarrages doit rester **inferieur au bassin**. Six
+redemarrages a 60 degres laissent des orientations litteralement inatteignables, et le mauvais
+ajustement qui en resulte se lit ensuite comme une confiance faible alors que c'est la recherche
+qui a echoue. Defaut porte a **24 redemarrages** (15 degres).
+
+**Decision 2.** Un **pre-alignement grossier** (centroides et etendue) precede toujours l'ICP.
+Sans lui, l'ICP doit absorber simultanement une translation, un facteur d'echelle et une rotation,
+et echoue meme a quelques degres.
+
+**Consequence pour F10.** L'ICP seul ne recupere pas une pose depuis rien. Deux voies restent
+ouvertes, a trancher au moment de F10 : partir des **poses nominales de la prise de vue** (6
+azimuts x 3 elevations, connues a quelques degres pres — c'est le chemin privilegie), ou ajouter
+un recalage global par descripteurs. On ne construit pas le second tant que le premier n'a pas
+ete essaye.
+
+**Alternative rejetee.** *Augmenter indefiniment le nombre de redemarrages* : le cout croit
+lineairement et ne resout pas le cas ou la rotation relative n'est pas autour de l'axe vertical
+(deux vues d'elevations differentes). Les poses nominales le resolvent directement.
+
+---
+
+## ADR-0007 — La confiance de recalage mesure l'ambiguite, pas seulement le residu
+
+**Date** : 2026-08-07 · **Statut** : accepte · **Origine** : F11
+
+**Decision.** `confidence = inlier_ratio x qualite_d_ajustement x distinctness`, ou *distinctness*
+compare le meilleur ajustement au meilleur ajustement **materiellement different** (plus de 10
+degres d'ecart). Sous le seuil, `register` **leve une exception** au lieu de renvoyer une pose.
+
+**Raison.** Le projet vise des **pieces mecaniques**, qui sont couramment symetriques. Mesure sur
+une bague a symetrie d'ordre 12 : elle s'aligne sur elle-meme **exactement** — rmse 1,3e-16, 100 %
+d'inliers. Un score fonde sur le seul residu lui donnerait une confiance de 1,0 et renverrait une
+pose choisie au hasard parmi douze. La meme mesure sur une piece asymetrique donne une
+distinctness de 1,0 et une confiance de 1,0.
+
+Autrement dit : **la qualite d'ajustement ne distingue pas « c'est la bonne pose » de « c'est
+l'une des douze »**. Seul le terme d'ambiguite le fait.
+
+**Pourquoi refuser plutot que signaler.** Une pose fausse ne degrade pas legerement la fusion
+multi-vues : elle etale la piece, et sans rien lever. Un appelant qui veut inspecter un recalage
+rejete passe `min_confidence=0.0` ; l'ambiguite reste rapportee, jamais masquee.
+
+**Consequence.** Au moins deux initialisations sont exigees : avec une seule il n'existe aucune
+rivale, donc une piece symetrique passerait le controle sans etre detectee. `register` leve une
+`ValueError` dans ce cas plutot que de rendre un score d'ambiguite qui ne veut rien dire.
+
+---
+
 ## ADR-0005 — Le multi-vues doit etre implemente, et H1 est plus fragile qu'anticipe
 
 **Date** : 2026-08-06 · **Statut** : accepte · **Origine** : spike F01

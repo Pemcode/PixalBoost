@@ -96,9 +96,9 @@
       "sprint": 1,
       "behavior": "Un score de confiance de recalage est calcule, et une pose sous le seuil provoque un refus explicite plutot qu'une reconstruction degradee.",
       "verification": "uv run pytest tests/unit/test_registration.py",
-      "state": "not_started",
-      "evidence": null
-    },
+      "state": "passing",
+      "evidence": "commit F11 — 25 tests verts. Umeyama closed-form, ICP tronque avec pre-alignement grossier, score de confiance = inliers x qualite x distinctness, refus par exception sous le seuil. Bague a symetrie d'ordre 12: rmse 1,3e-16 et 100% d'inliers, pourtant refusee (distinctness 0,018).",
+      "note": "Deux mesures actees en ADR-0006 et ADR-0007. Le bassin de convergence de l'ICP (~20 deg) dimensionne le nombre de redemarrages et conditionne la strategie d'initialisation de F10."
     {
       "id": "F12",
       "sprint": 1,
