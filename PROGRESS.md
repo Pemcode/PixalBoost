@@ -5,87 +5,81 @@
 
 ## Etat verifie
 
-- **Sprint** : 0 (harness minimal + spike de lecture de code)
-- **Features `passing`** : F00, F01, F02, F03, F04, F05
-- **Feature active** : aucune. F06 et F07 sont **bloquees** (voir plus bas).
-- **Dernier gate vert** : `uv run poe check` — ruff + mypy strict + **121 tests**, **3,6 s**
+- **Sprint 0 : termine.** F00 a F06 sont `passing`.
+- **Sprint 1 : commence.** F11 est `passing`.
+- **Bloque** : F07 (endpoint RunPod, voir plus bas).
+- **Dernier gate vert** : `uv run poe check` — ruff + mypy strict + **186 tests**, **4,9 s**.
+  Vert aussi sur GitHub Actions, donc sur une machine Linux propre.
 
 ## Fait
 
-**F00 — harness.** `uv` + Python 3.11 pinne, `uv.lock` commite. Surface `uv run poe
-{setup,lint,fmt,typecheck,test,check,bench-build}` plus un `Makefile` delegateur (ADR-0002).
-CI CPU GitHub Actions. `.gitattributes` pour forcer les fins de ligne en LF.
+**F00 — harness.** `uv` + Python 3.11 pinne. Surface `uv run poe
+{setup,lint,fmt,typecheck,test,check,bench-build}` + `Makefile` delegateur (ADR-0002).
 
-**F01 — spike Pixal3D.** Submodule `vendor/pixal3d` pinne sur `cdbb2bb`. Verdict dans
-`docs/pixal3d-internals.md`, verrouille par 7 tests de contrat en analyse statique `ast`.
+**F01 — spike Pixal3D.** Submodule pinne sur `cdbb2bb`. Verdict verrouille par 7 tests de
+contrat en analyse statique `ast`.
 
-**F02 — `core/geometry.py`.** Sim3 (composition, inverse, matrice), camera Blender, projection
-et back-projection exactement inversibles, grille de conditionnement canonique. 20 assertions
-analytiques.
+**F02 — `core/geometry.py`.** Sim3, camera Blender, projection/back-projection inversibles.
 
-**F03 — `core/render.py` + `core/metrics.py`.** Rasteriseur numpy pur avec z-buffer et
-interpolation de profondeur perspective-correcte ; IoU de silhouette, F-score, Chamfer,
-echantillonnage de surface pondere par l'aire. 34 assertions analytiques.
+**F03 — `core/render.py` + `core/metrics.py`.** Rasteriseur numpy pur, IoU de silhouette,
+F-score, Chamfer, echantillonnage pondere par l'aire.
 
-**F04 — frontiere `core/`.** Detection statique : pas de torch/GPU/reseau, dependances dirigees
-vers l'interieur, pas d'alea global implicite. Les detecteurs sont eux-memes testes, et le
-garde-fou a ete valide en injectant une vraie violation dans `core/`.
+**F04 — frontiere `core/`.** Detection statique, detecteurs eux-memes testes, garde-fou valide
+par injection d'une vraie violation.
 
-**F05 — benchmark synthetique.** 3 pieces procedurales etanches (equerre, arbre etage, rondelle
-percee) x 18 vues en 512, construites en 5,1 s hors ligne. Voir `docs/benchmark.md`.
+**F05 — benchmark synthetique.** 3 pieces etanches x 18 vues (6 azimuts x 3 elevations) en 5,1 s.
 
-## Ce que F01 a etabli — a lire avant F10
+**F06 — image GPU.** `ghcr.io/pemcode/pixalboost:gpu-latest` publiee, 6,24 Go compresses,
+manifeste verifie recuperable anonymement. Voir `docs/gpu-runtime.md`.
 
-**Le multi-vues n'est pas expose, il est bloque** par un `assert transform_matrix is None`
-(`image_conditioned_proj.py:211`). Le « 2 views by default » du README amont est de
-l'echantillonnage a l'entrainement, pas du conditionnement multi-vues.
+**F11 — `core/registration.py`.** Umeyama closed-form, ICP tronque avec pre-alignement grossier,
+score de confiance et refus. Deux mesures actees en ADR-0006 et ADR-0007.
 
-Deux consequences, actees en ADR-0005 :
-1. **F10 devient une implementation**, pas un wrapper. L'intervention reste chirurgicale : la
-   plomberie mathematique existe deja et accepte une camera arbitraire.
-2. **H1 est plus fragile qu'anticipe.** Le checkpoint publie est entraine en mono-vue a camera
-   fixe ; un volume de features moyenne sur N vues est hors distribution pour ces poids. F12
-   devra mesurer une variante de repli en plus de B1.
+## Les trois constats a connaitre avant F10
+
+1. **Le multi-vues de Pixal3D est bloque**, pas seulement absent : `assert transform_matrix is
+   None` (`image_conditioned_proj.py:211`). F10 est donc une implementation. ADR-0005.
+2. **Le checkpoint publie est entraine en mono-vue a camera fixe.** Un volume de features moyenne
+   sur N vues lui est hors distribution. H1 est fragile ; F12 doit mesurer une variante de repli.
+3. **L'ICP raffine, il ne cherche pas** : bassin mesure a ~20 degres. Il ne recuperera pas une
+   pose depuis rien. ADR-0006 laisse deux voies pour F10 — partir des **poses nominales de la
+   prise de vue** (chemin privilegie, elles sont connues a quelques degres pres), ou ajouter un
+   recalage global par descripteurs. **On n'ecrit pas le second avant d'avoir essaye le premier.**
 
 ## Bloque — demande une action de l'utilisateur
 
-**F06 (image Docker GPU -> GHCR)** et **F07 (smoke RunPod)** ne peuvent pas etre verifiees
-en l'etat. Leurs commandes de verification exigent des ressources externes absentes :
+**F07 — smoke RunPod.** Le code est ecrit et couvert par 40 tests CPU (cache, client,
+adaptateur) ; seule la verification reelle manque, donc la feature n'est pas faite.
 
-| Feature | Ce qui manque | Ce qu'il faut |
-|---|---|---|
-| F06 | Aucun remote git configure ; `docker` n'est pas installe en local | Creer le depot distant GitHub et le declarer en `origin`, pour que le workflow puisse builder et pousser sur GHCR |
-| F07 | Aucune cle API RunPod, aucun endpoint | Un compte RunPod, une cle API dans `.env`, et un network volume pour les ~26 Go de poids |
+Il manque deux choses :
+- **Une cle API RunPod valide.** L'ancienne a ete exposee dans une sortie de terminal et doit
+  etre revoquee et regeneree. Le code lit `runpod.env` a l'execution, donc la rotation est une
+  simple edition de fichier.
+- **Un endpoint deploye** a partir de `ghcr.io/pemcode/pixalboost:gpu-latest`, avec un network
+  volume pour les ~26 Go de poids. Puis relancer avec `RUNPOD_ENDPOINT_ID=<id>`.
 
-Conformement a la contrainte n°2, elles restent `not_started` : le code peut etre ecrit, mais
-tant que la commande de verification n'a pas tourne, la feature n'est pas faite.
+Le premier demarrage telecharge 26 Go et chaque cold start streame ces poids : plusieurs minutes
+de GPU facture avant la moindre inference. C'est pour cela que rien n'a ete provisionne sans
+accord explicite.
 
 ## Prochaine action
 
-Deux voies possibles, au choix de l'utilisateur :
+**F12 partiel, sans GPU** : cabler le runner d'evaluation (`bench/`) sur le benchmark
+synthetique et sur `core/metrics.py`, avec des sorties de modele simulees. Cela met en place
+`runs/<ts>/manifest.json`, `metrics.json` et la planche de rendus comparatifs, pour que le jour
+ou les artefacts GPU arrivent, il ne reste qu'a les brancher.
 
-1. **Debloquer F06/F07** en fournissant remote GitHub et cle RunPod, ce qui ferme le Sprint 0.
-2. **Attaquer le Sprint 1 par sa partie CPU** : F11 (`core/registration.py`, estimation de Sim3
-   par RANSAC + ICP et score de confiance de pose) est entierement testable hors GPU et sur le
-   benchmark synthetique. C'est le prerequis de F10 de toute facon, puisque le multi-vues exige
-   des poses relatives.
-
-Recommandation : **la voie 2**, parce qu'elle avance le chemin critique sans dependre d'un
-acces externe, et parce que le recalage est le maillon faible identifie des le plan.
+Sinon, F10 des que F07 est debloquee.
 
 ## Jeu de photos reelles disponible
 
-L'utilisateur dispose d'une serie de **18 photos** d'une **piece metallique mate** :
-**6 azimuts x 3 elevations** (+45 deg, 0 deg, -45 deg). Elles seront ajoutees au depot le moment
-venu (probablement en amont de F12).
+18 photos d'une **piece metallique mate**, 6 azimuts x 3 elevations (+45/0/-45). Le benchmark
+synthetique reproduit deja exactement cette geometrie. A ajouter au depot en amont de F12.
 
-Le benchmark synthetique de F05 reproduit deja **exactement** cette geometrie de prise de vue.
-Piece **mate** : bonne nouvelle, les reflets speculaires sont le pire cas pour l'estimation de
-pose comme pour le detourage.
+## Notes
 
-## Notes pour la session suivante
-
-- `docker` et `make` ne sont pas installes sur la machine de dev (Windows). Assume : l'image GPU
-  se construit en CI, `poe` remplace `make` en local.
-- Aucun GPU local. Tout ce qui touche au GPU passe par RunPod et doit remplir `artifacts/`.
-- Cout Pixal3D releve en F01 : ~18 Go de VRAM en standard, ~10-12 Go en `--low_vram`.
+- `docker` et `make` ne sont pas installes en local (Windows). Assume.
+- Aucun GPU local : tout passe par RunPod et doit remplir `artifacts/`.
+- Cout Pixal3D : ~18 Go de VRAM en standard, ~10-12 Go en `--low_vram`.
+- Les logs GitHub Actions exigent une authentification meme sur un depot public. Le workflow
+  publie donc la queue d'un build echoue en **annotation de check-run**, lisible anonymement.

@@ -68,9 +68,9 @@
       "sprint": 0,
       "behavior": "L'image Docker GPU (TRELLIS.2 + NATTEN + utils3d + Pixal3D) est construite par GitHub Actions et poussee sur GHCR.",
       "verification": "Le run gpu-image le plus recent a conclusion == success, et le manifeste de ghcr.io/pemcode/pixalboost:gpu-latest est recuperable depuis le registre",
-      "state": "active",
-      "evidence": null,
-      "note": "docker n'est pas installe en local, donc la verification porte sur le manifeste publie plutot que sur un docker pull. Premier run echoue: GHCR refuse les majuscules du login proprietaire."
+      "state": "passing",
+      "evidence": "Run 31192502560 conclusion=success. Manifeste OCI recuperable anonymement depuis ghcr.io/pemcode/pixalboost: 18 couches, 6,24 Go compresses. Tags publies: gpu-latest et gpu-5ff20035eaf792065672078c19fc96f88de0c2f5.",
+      "note": "docker n'est pas installe en local, donc la verification porte sur le manifeste publie plutot que sur un docker pull. Trois runs: echec 1 = GHCR refuse les majuscules du login, echec 2 = bug dans notre propre verification d'imports (importlib.util), succes au 3e."
     },
     {
       "id": "F07",
