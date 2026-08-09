@@ -80,6 +80,7 @@ demander `overwrite=True` explicitement.
 | Volume Mount Path | `/workspace` |
 | Network Volume | 60 Go, **meme region que le GPU** |
 | Environment | `HF_HOME=/workspace/huggingface` |
+| Environment | `ATTN_BACKEND=sdpa` (ou `flash_attn_3` sur Hopper) |
 | GPU | >= 16 Go de VRAM (RTX 4090, L40S, A100) |
 
 **Les deux reglages qui cassent tout si on les oublie :**
@@ -91,6 +92,20 @@ demander `overwrite=True` explicitement.
    le chemin de montage **serverless**. Sur un Pod le volume est monte sur `/workspace`. Sans ce
    reglage, les ~26 Go de poids atterrissent sur le disque du conteneur : re-telecharges a chaque
    redemarrage, et le disque peut saturer.
+
+**Le piege du backend d'attention**
+
+Le defaut amont est `ATTN_BACKEND=flash_attn`, qui fait `import flash_attn` sans aucun repli
+(`full_attn.py:105-107`). Or le wheel installe fournit `flash_attn_3`, `flash_attn_interface` et
+`flash_attn_config` — **pas `flash_attn`**. Le defaut amont plante donc, et il plante *a
+l'inference*, apres les 26 Go de telechargement.
+
+L'image est configuree sur **`sdpa`**, le noyau d'attention de PyTorch : toujours present, aucune
+extension requise. Sur du **Hopper (H100)**, `flash_attn_3` est plus rapide et pointe bien sur
+`flash_attn_interface`. Sur Ada ou Ampere (4090, L40S, A100), rester sur `sdpa`.
+
+`verify_extensions.py` verifie desormais que le backend configure a bien son module, donc cette
+classe d'erreur casse le build au lieu d'une session de pod.
 
 **Verifier, dans cet ordre**
 

@@ -20,10 +20,28 @@ from __future__ import annotations
 
 import importlib
 import importlib.util  # `import importlib` alone does NOT expose `.util`
+import os
 import sys
 
 IMPORTABLE = ("torch", "trimesh", "transformers", "runpod", "utils3d", "moge")
 PRESENT_ONLY = ("natten", "o_voxel", "flex_gemm", "cumesh", "nvdiffrast", "flash_attn_3")
+
+#: What each attention backend actually imports, read off
+#: pixal3d/modules/attention/full_attn.py:97-144. None means "always available".
+#:
+#: This mapping exists because the names differ from the wheel names in a way
+#: that already cost one broken image: the flash_attn_3 wheel ships
+#: `flash_attn_interface`, not `flash_attn`, so upstream's default backend
+#: raises ModuleNotFoundError -- and it does so at inference time, after the
+#: 26 GB weight download rather than at build time.
+BACKEND_MODULE = {
+    "xformers": "xformers.ops",
+    "flash_attn": "flash_attn",
+    "flash_attn_3": "flash_attn_interface",
+    "flash_attn_4": "flash_attn.cute",
+    "sdpa": None,
+    "naive": None,
+}
 
 
 def main() -> int:
@@ -49,6 +67,20 @@ def main() -> int:
             print(f"FAIL  {name:<16} not installed", file=sys.stderr)
         else:
             print(f"ok    {name:<16} present")
+
+    backend = os.environ.get("ATTN_BACKEND", "flash_attn")
+    if backend not in BACKEND_MODULE:
+        failures.append(f"ATTN_BACKEND={backend!r} is not one of {sorted(BACKEND_MODULE)}")
+        print(f"FAIL  {'ATTN_BACKEND':<16} unknown value {backend!r}", file=sys.stderr)
+    else:
+        required = BACKEND_MODULE[backend]
+        if required is None:
+            print(f"ok    {'ATTN_BACKEND':<16} {backend} needs no extra module")
+        elif importlib.util.find_spec(required.split(".")[0]) is None:
+            failures.append(f"ATTN_BACKEND={backend} needs {required}, which is not installed")
+            print(f"FAIL  {'ATTN_BACKEND':<16} {backend} needs {required}", file=sys.stderr)
+        else:
+            print(f"ok    {'ATTN_BACKEND':<16} {backend} -> {required}")
 
     if failures:
         print(f"\nMISSING MODULES: {failures}", file=sys.stderr)

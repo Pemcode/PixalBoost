@@ -12,6 +12,13 @@
 #  2. Those wheels are `cp310`, so the interpreter must be Python 3.10 exactly.
 #     Ubuntu 22.04 ships 3.10 as its system python, which is why this base is
 #     pinned to 22.04 rather than something newer.
+#  3. ATTN_BACKEND is `sdpa`, NOT upstream's `flash_attn` default. The
+#     flash_attn_3 wheel provides `flash_attn_3`, `flash_attn_interface` and
+#     `flash_attn_config` -- it does not provide `flash_attn`, which is what the
+#     `flash_attn` backend imports, with no fallback. Leaving the default would
+#     crash at inference time, after the 26 GB weight download. `sdpa` is
+#     PyTorch's own kernel and is always available; set `flash_attn_3` by hand
+#     on Hopper hardware to go faster.
 #
 # Model weights (~26 GB) are NOT baked in. They live on a network volume and are
 # fetched into HF_HOME at runtime; baking them would make the image unpushable.
@@ -22,7 +29,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
     PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True \
-    ATTN_BACKEND=flash_attn \
+    ATTN_BACKEND=sdpa \
     OPENCV_IO_ENABLE_OPENEXR=1 \
     HF_HOME=/runpod-volume/huggingface
 
