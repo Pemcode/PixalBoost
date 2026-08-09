@@ -68,6 +68,51 @@ Et la contrainte n°9 de `CLAUDE.md` : **ne jamais regenerer un artefact deja pr
 distant et facture a la seconde. `ArtifactCache.store` refuse d'ecraser par defaut ; il faut
 demander `overwrite=True` explicitement.
 
+## Configurer un Pod RunPod (phase recherche)
+
+**Template**
+
+| Champ | Valeur |
+|---|---|
+| Container Image | `ghcr.io/pemcode/pixalboost:gpu-latest` |
+| Container Start Command | `sleep infinity` |
+| Container Disk | 30 Go |
+| Volume Mount Path | `/workspace` |
+| Network Volume | 60 Go, **meme region que le GPU** |
+| Environment | `HF_HOME=/workspace/huggingface` |
+| GPU | >= 16 Go de VRAM (RTX 4090, L40S, A100) |
+
+**Les deux reglages qui cassent tout si on les oublie :**
+
+1. **`Container Start Command: sleep infinity`.** La commande par defaut de l'image est
+   `python3 handler.py`, qui demarre la boucle serverless RunPod. Dans un Pod elle n'a aucun job
+   a consommer : le conteneur tourne dans le vide ou sort. On l'ecrase pour garder un shell.
+2. **`HF_HOME=/workspace/huggingface`.** L'image pointe par defaut sur `/runpod-volume`, qui est
+   le chemin de montage **serverless**. Sur un Pod le volume est monte sur `/workspace`. Sans ce
+   reglage, les ~26 Go de poids atterrissent sur le disque du conteneur : re-telecharges a chaque
+   redemarrage, et le disque peut saturer.
+
+**Verifier, dans cet ordre**
+
+```bash
+# 1. L'environnement est complet (instantane, aucun poids telecharge)
+python3 /opt/pixaboost/verify_extensions.py
+
+# 2. Le GPU est vu
+python3 -c "import torch; print(torch.cuda.get_device_name(0))"
+
+# 3. Premiere inference: telecharge ~26 Go dans HF_HOME, puis genere
+python3 /opt/pixal3d/inference.py \
+    --image /opt/pixal3d/assets/images/0_img.png \
+    --output /workspace/test.glb --low_vram
+
+# 4. Les poids sont bien sur le volume, pas sur le disque conteneur
+du -sh /workspace/huggingface
+```
+
+L'etape 1 est celle qui merite d'etre lancee en premier : elle echoue en une seconde si l'image
+est cassee, au lieu d'attendre 26 Go de telechargement pour l'apprendre.
+
 ## Secrets
 
 La cle API RunPod se lit depuis `RUNPOD_API_KEY` ou depuis `runpod.env` (jeton nu sur une ligne,
