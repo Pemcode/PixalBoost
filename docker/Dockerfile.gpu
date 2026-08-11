@@ -7,8 +7,14 @@
 #
 #  1. `runtime`, not `devel`. Every CUDA extension Pixal3D needs (natten,
 #     flash_attn_3, o_voxel, flex_gemm, cumesh, nvdiffrast) ships as a prebuilt
-#     wheel in vendor/pixal3d/requirements-hfdemo.txt. Nothing is compiled here,
-#     so no nvcc is needed and the build takes minutes rather than an hour.
+#     wheel in vendor/pixal3d/requirements-hfdemo.txt. Nothing is compiled at
+#     *install* time, so no nvcc is needed and the build takes minutes.
+#     But gcc/g++ are still installed: flex_gemm imports Triton, which JIT
+#     compiles a small C helper (driver.c) at *run* time to talk to the CUDA
+#     driver. Without a compiler that fails with "Failed to find C compiler",
+#     and it fails on the first real import -- invisible to a CPU build, so it
+#     surfaces on paid hardware. Triton ships its own CUDA headers, so a plain
+#     compiler is enough and the `devel` base is still not needed.
 #  2. Those wheels are `cp310`, so the interpreter must be Python 3.10 exactly.
 #     Ubuntu 22.04 ships 3.10 as its system python, which is why this base is
 #     pinned to 22.04 rather than something newer.
@@ -39,6 +45,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         python3-pip \
         git \
         ca-certificates \
+        gcc \
+        g++ \
         libgl1 \
         libglib2.0-0 \
         libegl1 \

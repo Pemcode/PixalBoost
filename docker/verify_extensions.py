@@ -21,6 +21,7 @@ from __future__ import annotations
 import importlib
 import importlib.util  # `import importlib` alone does NOT expose `.util`
 import os
+import shutil
 import sys
 
 IMPORTABLE = ("torch", "trimesh", "transformers", "runpod", "utils3d", "moge")
@@ -67,6 +68,17 @@ def main() -> int:
             print(f"FAIL  {name:<16} not installed", file=sys.stderr)
         else:
             print(f"ok    {name:<16} present")
+
+    # flex_gemm imports Triton, which JIT compiles a C helper at *run* time to
+    # reach the CUDA driver. No compiler means "Failed to find C compiler", and
+    # it only surfaces on the first real import -- i.e. on paid hardware, after
+    # the weight download. Checking for the binary catches it during the build.
+    compiler = os.environ.get("CC") or shutil.which("cc") or shutil.which("gcc")
+    if compiler is None:
+        failures.append("no C compiler: Triton cannot build its CUDA driver module")
+        print(f"FAIL  {'C compiler':<16} not found (needed by Triton at runtime)", file=sys.stderr)
+    else:
+        print(f"ok    {'C compiler':<16} {compiler}")
 
     backend = os.environ.get("ATTN_BACKEND", "flash_attn")
     if backend not in BACKEND_MODULE:
