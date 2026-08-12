@@ -37,3 +37,6 @@ data/
 Thumbs.db
 .vscode/
 .idea/
+
+# Wheels telecharges pour inspection (ils ont deja fait exploser un push a 493 Mo)
+*.whl

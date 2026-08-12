@@ -32,6 +32,34 @@ demarrage.
 **Consequence sur l'UX de production** : un cold start se compte en **minutes**, pas en 200 ms.
 L'API de production devra etre **asynchrone** (soumission puis polling), jamais `/runsync`.
 
+## GPU compatibles — a lire avant de provisionner quoi que ce soit
+
+La stack est verrouillee sur **torch 2.6.0 / CUDA 12.4** par les six wheels precompiles. Le GPU
+doit donc avoir une compute capability entre **5.0 et 9.0**. Voir ADR-0008.
+
+| Capability | GPU | Verdict |
+|---|---|---|
+| sm_120 | RTX PRO Blackwell, RTX 5090, B200 | **NON** — torch 2.6 est anterieur a Blackwell |
+| sm_90 | H100, H200 | oui, cher |
+| **sm_89** | **RTX 4090, RTX 4080, L40S, L4** | **oui — le meilleur choix** |
+| sm_86 | A6000, A40, RTX 3090 | oui |
+| sm_80 | A100 | oui |
+
+Une RTX PRO 4500 Blackwell a ete provisionnee par erreur : torch a refuse de l'utiliser
+(`sm_120 is not compatible with the current PyTorch installation`). Session perdue.
+
+## Le piege natten
+
+Le wheel `natten 0.21.0` epingle par `requirements-hfdemo.txt` est un build prive **sm_90
+uniquement**. Il echoue sur toute autre architecture avec `no kernel image is available for
+execution on the device` — **en cours d'inference**, apres le telechargement des poids.
+
+L'image installe donc par-dessus le build officiel SHI-Labs `0.17.5+torch260cu124`, qui couvre
+sm_60 a sm_90. NAF bascule automatiquement sur son chemin `legacy_attention`. Voir ADR-0009.
+
+`verify_extensions.py` lit les architectures des cubins installes et casse le build si un GPU
+cible n'est pas servi.
+
 ## Couts et VRAM
 
 | Mode | VRAM | Resolution par defaut |
@@ -106,6 +134,27 @@ extension requise. Sur du **Hopper (H100)**, `flash_attn_3` est plus rapide et p
 
 `verify_extensions.py` verifie desormais que le backend configure a bien son module, donc cette
 classe d'erreur casse le build au lieu d'une session de pod.
+
+**Le detourage est gated**
+
+`pipeline.json` impose `briaai/RMBG-2.0`, un depot gated sous licence `other`. On force
+`ZhengPeng7/BiRefNet` (MIT, meme architecture) par un patch applique **avant**
+`from_pretrained`. Voir ADR-0010 et `/workspace/run_mit.py` sur le volume.
+
+**Cout mesure d'une inference** (RTX 4090, `low_vram`, 1024_cascade, image d'exemple)
+
+| Etage | Duree |
+|---|---|
+| Sparse structure | 2 s |
+| Shape SLat | 1 s |
+| **HR shape SLat 1024** | **13 s** |
+| Texture SLat | 7 s |
+| Finalisation du maillage | 31 s |
+| **Total mur, chargements compris** | **~25 min** |
+
+Le total est domine par les chargements de modeles, pas par le calcul. Consequence directe pour
+F12 : **il faut batcher** — recharger la cascade a chaque image rendrait le benchmark
+(3 pieces x 18 vues) absurdement cher. C'est un point a traiter avant de lancer les runs.
 
 **Verifier, dans cet ordre**
 

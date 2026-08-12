@@ -79,8 +79,8 @@
       "verification": "RUNPOD_ENDPOINT_ID=<id> uv run pytest tests/e2e/test_smoke_single_view.py -m gpu",
       "state": "blocked",
       "evidence": null,
-      "blocked_on": "Aucun endpoint RunPod deploye. Necessite: F06 passing, un network volume pour les ~26 Go de poids, et l'accord de l'utilisateur sur la depense GPU.",
-      "note": "Le code est ecrit et couvert par 40 tests CPU (cache, client, adaptateur). Seule la verification reelle manque, donc la feature n'est pas faite."
+      "blocked_on": "Le test vise un endpoint serverless (RUNPOD_ENDPOINT_ID) alors que la phase recherche tourne sur un Pod. Il manque un transport SSH dans backends/ pour piloter un pod depuis les tests.",
+      "note": "La chaine est prouvee MANUELLEMENT le 2026-08-12: un GLB de 37 Mo produit de bout en bout sur RTX 4090 (voir artifacts/smoke-20260812/manifest.json). Mais la commande de verification n'a pas tourne, donc la feature n'est pas 'passing'. Le code est couvert par 40 tests CPU."
     },
     {
       "id": "F10",
@@ -105,7 +105,8 @@
       "behavior": "Un tableau chiffre compare B0 (meilleure vue seule) et B1 (multi-vues natif) sur le benchmark, avec metriques P1/P2 et planche de rendus comparatifs.",
       "verification": "uv run poe bench-compare",
       "state": "not_started",
-      "evidence": null
+      "evidence": null,
+      "note": "Cout mesure: ~25 min par inference, domine par les chargements de modeles et non par le calcul. 3 pieces x 18 vues en mono-vue = ~22 h de GPU. Il faut batcher (charger la cascade une fois, boucler sur les images) avant de lancer, sinon le benchmark est economiquement absurde."
     },
     {
       "id": "F13",

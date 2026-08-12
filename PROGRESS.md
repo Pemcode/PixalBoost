@@ -6,70 +6,86 @@
 ## Etat verifie
 
 - **Sprint 0 : termine.** F00 a F06 sont `passing`.
-- **Sprint 1 : commence.** F11 est `passing`.
-- **Bloque** : F07 (endpoint RunPod, voir plus bas).
-- **Dernier gate vert** : `uv run poe check` — ruff + mypy strict + **186 tests**, **4,9 s**.
-  Vert aussi sur GitHub Actions, donc sur une machine Linux propre.
+- **Sprint 1 : entame.** F11 est `passing`. F07 est `blocked`.
+- **Dernier gate vert** : `uv run poe check` — ruff + mypy strict + **186 tests**, **~5 s**.
+  Vert aussi sur GitHub Actions.
 
 ## Fait
 
-**F00 — harness.** `uv` + Python 3.11 pinne. Surface `uv run poe
-{setup,lint,fmt,typecheck,test,check,bench-build}` + `Makefile` delegateur (ADR-0002).
+| Feature | Etat | Preuve |
+|---|---|---|
+| F00 harness | `passing` | `poe setup && poe check` |
+| F01 spike Pixal3D | `passing` | 7 tests de contrat `ast` |
+| F02 `core/geometry` | `passing` | 20 assertions analytiques |
+| F03 rendu + metriques | `passing` | 34 assertions analytiques |
+| F04 frontiere `core/` | `passing` | 24 tests, garde-fou valide par injection |
+| F05 benchmark | `passing` | 3 pieces x 18 vues en 5,1 s |
+| F06 image GPU | `passing` | manifeste GHCR verifie |
+| F11 recalage | `passing` | 25 tests, ADR-0006 et ADR-0007 |
 
-**F01 — spike Pixal3D.** Submodule pinne sur `cdbb2bb`. Verdict verrouille par 7 tests de
-contrat en analyse statique `ast`.
+## Le jalon de la session du 2026-08-12
 
-**F02 — `core/geometry.py`.** Sim3, camera Blender, projection/back-projection inversibles.
+**Premiere reconstruction de bout en bout reussie.** Un GLB de 37 Mo produit sur RTX 4090 depuis
+l'image publiee. Artefact et manifeste dans `artifacts/smoke-20260812/`.
 
-**F03 — `core/render.py` + `core/metrics.py`.** Rasteriseur numpy pur, IoU de silhouette,
-F-score, Chamfer, echantillonnage pondere par l'aire.
+Il a fallu quatre correctifs pour y arriver, tous partageant la meme signature : **un
+`pip install` vert ne prouve rien sur l'execution.** Aucun n'etait visible avant du materiel
+facture.
 
-**F04 — frontiere `core/`.** Detection statique, detecteurs eux-memes testes, garde-fou valide
-par injection d'une vraie violation.
+1. GHCR refuse les majuscules du login proprietaire (build casse).
+2. `ATTN_BACKEND=flash_attn` par defaut importe un module que le wheel ne fournit pas -> `sdpa`.
+3. Triton compile un helper C **a l'execution** -> `gcc`/`g++` dans l'image.
+4. Le wheel natten amont ne porte que `sm_90` -> build officiel SHI-Labs multi-architectures.
 
-**F05 — benchmark synthetique.** 3 pieces etanches x 18 vues (6 azimuts x 3 elevations) en 5,1 s.
+Chaque incident est devenu une assertion executable dans `verify_extensions.py`, qui casse
+desormais un build CPU gratuit plutot qu'une session GPU.
 
-**F06 — image GPU.** `ghcr.io/pemcode/pixalboost:gpu-latest` publiee, 6,24 Go compresses,
-manifeste verifie recuperable anonymement. Voir `docs/gpu-runtime.md`.
+## Bloque
 
-**F11 — `core/registration.py`.** Umeyama closed-form, ICP tronque avec pre-alignement grossier,
-score de confiance et refus. Deux mesures actees en ADR-0006 et ADR-0007.
+**F07** — le test e2e vise un **endpoint serverless** alors que la phase recherche tourne sur un
+**Pod**. Il manque un transport SSH dans `backends/`, derriere la meme interface que le client
+serverless. Le cache, l'adaptateur et les 40 tests CPU ne bougeraient pas.
 
-## Les trois constats a connaitre avant F10
+**Le push est rejete** : `! [remote rejected] main -> main (pre-receive hook declined)`.
+**1 commit en attente** (le correctif natten). Tant que ce n'est pas resolu, l'image publiee
+n'a pas le correctif et chaque nouveau pod exige `bash /workspace/setup_pod.sh`.
+Le message complet du hook n'a pas encore ete capture — c'est peut-etre la protection anti-secrets
+de GitHub. **A diagnostiquer en priorite.**
 
-1. **Le multi-vues de Pixal3D est bloque**, pas seulement absent : `assert transform_matrix is
-   None` (`image_conditioned_proj.py:211`). F10 est donc une implementation. ADR-0005.
-2. **Le checkpoint publie est entraine en mono-vue a camera fixe.** Un volume de features moyenne
-   sur N vues lui est hors distribution. H1 est fragile ; F12 doit mesurer une variante de repli.
-3. **L'ICP raffine, il ne cherche pas** : bassin mesure a ~20 degres. Il ne recuperera pas une
-   pose depuis rien. ADR-0006 laisse deux voies pour F10 — partir des **poses nominales de la
-   prise de vue** (chemin privilegie, elles sont connues a quelques degres pres), ou ajouter un
-   recalage global par descripteurs. **On n'ecrit pas le second avant d'avoir essaye le premier.**
+## Deux correctifs encore manuels dans le pod
 
-## Bloque — demande une action de l'utilisateur
+Ils vivent sur le volume reseau et survivent aux redemarrages :
 
-**F07 — smoke RunPod.** Le code est ecrit et couvert par 40 tests CPU (cache, client,
-adaptateur) ; seule la verification reelle manque, donc la feature n'est pas faite.
+- `/workspace/setup_pod.sh` — reinstalle le natten officiel (ADR-0009)
+- `/workspace/run_mit.py` — force BiRefNet MIT au lieu de RMBG-2.0 gated (ADR-0010)
 
-Il manque deux choses :
-- **Une cle API RunPod valide.** L'ancienne a ete exposee dans une sortie de terminal et doit
-  etre revoquee et regeneree. Le code lit `runpod.env` a l'execution, donc la rotation est une
-  simple edition de fichier.
-- **Un endpoint deploye** a partir de `ghcr.io/pemcode/pixalboost:gpu-latest`, avec un network
-  volume pour les ~26 Go de poids. Puis relancer avec `RUNPOD_ENDPOINT_ID=<id>`.
+Le premier disparaitra quand le push passera. Le second doit etre porte proprement dans
+`backends/`.
 
-Le premier demarrage telecharge 26 Go et chaque cold start streame ces poids : plusieurs minutes
-de GPU facture avant la moindre inference. C'est pour cela que rien n'a ete provisionne sans
-accord explicite.
+## Ce qu'il faut savoir avant F10 et F12
+
+1. **Le multi-vues de Pixal3D est bloque**, pas absent : `assert transform_matrix is None`
+   (`image_conditioned_proj.py:211`). F10 est une implementation. ADR-0005.
+2. **Le checkpoint est entraine en mono-vue a camera fixe.** Un volume de features moyenne sur
+   N vues lui est hors distribution. H1 est fragile ; F12 doit mesurer une variante de repli.
+3. **L'ICP raffine, il ne cherche pas** : bassin ~20 degres. Partir des poses nominales de la
+   prise de vue, pas d'un recalage global. ADR-0006.
+4. **Une inference coute ~25 min**, domine par les chargements de modeles et non par le calcul.
+   3 pieces x 18 vues = ~22 h de GPU. **Il faut batcher avant de lancer F12.**
+5. **GPU : compute capability 5.0 a 9.0 uniquement.** Blackwell (sm_120) est exclu. ADR-0008.
 
 ## Prochaine action
 
-**F12 partiel, sans GPU** : cabler le runner d'evaluation (`bench/`) sur le benchmark
-synthetique et sur `core/metrics.py`, avec des sorties de modele simulees. Cela met en place
-`runs/<ts>/manifest.json`, `metrics.json` et la planche de rendus comparatifs, pour que le jour
-ou les artefacts GPU arrivent, il ne reste qu'a les brancher.
+**Regarder `artifacts/smoke-20260812/test.glb`.** C'est la premiere sortie reelle du modele et
+personne ne l'a encore inspectee. Question a trancher : la qualite est-elle dans le bon ordre de
+grandeur pour un usage catalogue ? La reponse oriente tout le reste — si le mono-vue est deja
+suffisant sur des objets simples, le gate F13 se rapproche.
 
-Sinon, F10 des que F07 est debloquee.
+Ensuite, dans l'ordre de valeur :
+1. Debloquer le push (le correctif natten doit entrer dans l'image).
+2. Porter le patch BiRefNet dans `backends/` plutot que dans un script sur le volume.
+3. Batcher l'inference — prerequis economique de F12.
+4. F10, le chemin multi-vues.
 
 ## Jeu de photos reelles disponible
 
@@ -79,7 +95,9 @@ synthetique reproduit deja exactement cette geometrie. A ajouter au depot en amo
 ## Notes
 
 - `docker` et `make` ne sont pas installes en local (Windows). Assume.
-- Aucun GPU local : tout passe par RunPod et doit remplir `artifacts/`.
-- Cout Pixal3D : ~18 Go de VRAM en standard, ~10-12 Go en `--low_vram`.
-- Les logs GitHub Actions exigent une authentification meme sur un depot public. Le workflow
-  publie donc la queue d'un build echoue en **annotation de check-run**, lisible anonymement.
+- Aucun GPU local : tout passe par RunPod.
+- Volume reseau RunPod en region `euro`, ~26 Go de poids en cache, facture meme pod eteint
+  (~4 EUR/mois). Ne pas le supprimer : il evite de retelecharger les poids.
+- Cle SSH locale : `~/.ssh/depthscan_sp005_ed25519` (pas de `id_ed25519`).
+- Les logs GitHub Actions exigent une authentification meme sur un depot public ; le workflow
+  publie la queue d'un build echoue en annotation de check-run, lisible anonymement.

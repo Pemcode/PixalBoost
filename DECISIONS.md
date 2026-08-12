@@ -77,6 +77,82 @@ en CI gratuite. On preserve la contrainte plutot que de l'affaiblir pour une seu
 
 ---
 
+## ADR-0008 — La stack est verrouillee sur torch 2.6 / cu124, donc sur sm_50 a sm_90
+
+**Date** : 2026-08-12 · **Statut** : accepte · **Origine** : premier smoke test reel
+
+**Constat.** Les extensions CUDA de Pixal3D (`o_voxel`, `flex_gemm`, `cumesh`, `nvdiffrast`,
+`flash_attn_3`, `natten`) sont des wheels precompiles contre l'ABI de **torch 2.6.0 / CUDA 12.4**.
+Aucun build de ces wheels n'existe pour une version superieure. Monter torch casserait les six
+pour en reparer une.
+
+**Consequence.** Le GPU doit avoir une compute capability comprise entre **5.0 et 9.0**.
+
+| Capability | GPU | Verdict |
+|---|---|---|
+| sm_120 | RTX PRO Blackwell, RTX 5090, B200 | **incompatible** — torch 2.6 ne les connait pas |
+| sm_90 | H100, H200 | compatible, cher |
+| **sm_89** | **RTX 4090, RTX 4080, L40S, L4** | **compatible — meilleur rapport cout/perf** |
+| sm_86 | A6000, A40, RTX 3090 | compatible |
+| sm_80 | A100 | compatible |
+
+Verifie a nos depens : une RTX PRO 4500 Blackwell (sm_120) a ete provisionnee et torch a refuse
+de l'utiliser. Cette table existe pour que la question ne se represente pas.
+
+**Reexamen.** Si un jour des wheels torch >= 2.7 apparaissent pour les six extensions.
+
+---
+
+## ADR-0009 — natten officiel plutot que le wheel amont
+
+**Date** : 2026-08-12 · **Statut** : accepte · **Origine** : premier smoke test reel
+
+**Constat.** Le wheel `natten 0.21.0` epingle par `requirements-hfdemo.txt` est un build prive
+ne contenant que des noyaux **sm_90** — verifie en parsant les en-tetes ELF des cubins :
+182 cubins, tous sm_90. Il fonctionne sur le H100 du Space Hugging Face et nulle part ailleurs.
+Sur une RTX 4090 il provoque `no kernel image is available for execution on the device`, **en
+cours d'inference**, apres le telechargement des poids.
+
+**Decision.** Installer par-dessus le build **officiel SHI-Labs 0.17.5** pour la combinaison
+exacte torch260/cu124/cp310, qui couvre `sm_60` a `sm_90`. Il expose l'ancienne API
+`natten.functional`, que l'upsampler NAF gere deja : son import est enveloppe dans un
+`try/except` qui selectionne `legacy_attention` quand la nouvelle API est absente.
+`--no-deps` est obligatoire : pip ne doit pas toucher a torch.
+
+**Alternatives rejetees.**
+- *Compiler natten pour sm_89* : une a trois heures de CI, alors qu'un binaire officiel existe.
+- *Monter torch a >= 2.7* pour activer le backend `flex-fna` sans noyaux : casse l'ABI de six
+  extensions (voir ADR-0008).
+- *Louer des H100* : le wheel amont y fonctionne, mais le cout horaire est prohibitif pour
+  remplir un cache d'artefacts en batch.
+
+**Verification.** `verify_extensions.py` lit desormais les architectures des cubins installes et
+fait echouer le build si un GPU cible n'est pas servi. Confronte aux deux wheels, il rejette le
+sm_90-only et accepte l'officiel.
+
+---
+
+## ADR-0010 — Detourage force sur BiRefNet MIT
+
+**Date** : 2026-08-12 · **Statut** : accepte
+
+**Constat.** `pipeline.json`, telecharge avec les poids, impose `briaai/RMBG-2.0` au module de
+detourage — un depot **gated**, sous licence `other`. Le defaut ecrit dans le code source
+(`BiRefNet.py:9`) est `ZhengPeng7/BiRefNet`, mais il est ecrase par la configuration.
+
+**Decision.** Forcer `ZhengPeng7/BiRefNet` (MIT, non gated). RMBG-2.0 **est** l'architecture
+BiRefNet reentrainee par BRIA ; la classe amont fonctionne avec l'un comme avec l'autre, seul le
+nom du depot change.
+
+**Raison.** Une licence `other` avec validation d'acces dans une chaine destinee a devenir une
+application est un risque juridique gratuit, alors qu'un equivalent MIT existe.
+
+**Portee.** Le detourage est **separable** du reste : le benchmark synthetique rend sur fond noir
+avec masques exacts, donc F12 ne l'utilise pas du tout. Il ne concerne que les photos reelles, et
+son remplacement est contenu dans `backends/`.
+
+---
+
 ## ADR-0006 — L'ICP raffine, il ne cherche pas : bassin mesure a ~20 degres
 
 **Date** : 2026-08-07 · **Statut** : accepte · **Origine** : F11

@@ -77,7 +77,20 @@ Trois etages, tous conditionnes par back-projection DINOv3
 | Texture 1024 | 64 | 1024 | oui (cible 1024) |
 
 Depth camera par **MoGe-2** (`Ruicheng/moge-2-vitl`), uniquement pour estimer le FOV puis
-dechargee (`inference.py:212-224`). Detourage par BiRefNet via `pipeline.preprocess_image`.
+dechargee (`inference.py:212-224`).
+
+**Detourage — attention au piege.** La classe s'appelle `BiRefNet` et son parametre par defaut
+est `ZhengPeng7/BiRefNet` (`rembg/BiRefNet.py:9`), mais **ce defaut n'est jamais utilise** : le
+nom du depot vient de `pipeline.json`, telecharge avec les poids, et vaut `briaai/RMBG-2.0` —
+gated, licence `other`.
+
+```python
+# pixal3d_image_to_3d.py:123
+pipeline.rembg_model = getattr(rembg, args['rembg_model']['name'])(**args['rembg_model']['args'])
+```
+
+Lire la valeur par defaut dans le code source et en conclure quel modele est charge est une
+erreur : c'est la configuration qui decide. Voir ADR-0010 pour le contournement.
 Export GLB par `o_voxel.postprocess.to_glb`, texture 4096, decimation 1 M
 (`inference.py:263-269`).
 
