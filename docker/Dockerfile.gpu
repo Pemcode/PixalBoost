@@ -65,6 +65,21 @@ RUN python3 -m pip install --no-cache-dir --upgrade pip setuptools wheel \
         "https://github.com/LDYang694/Storages/releases/download/20260430/utils3d-0.0.2-py3-none-any.whl" \
         runpod==1.7.7
 
+# Replace the natten wheel pinned upstream. Theirs (0.21.0) is a private build
+# carrying kernels for sm_90 ONLY -- fine on the Hugging Face Space's H100,
+# but "no kernel image is available for execution on the device" on anything
+# else, including the RTX 4090 (sm_89) this project runs its batches on.
+#
+# SHI-Labs' official 0.17.5 build for this exact torch/CUDA/Python combination
+# covers sm_60 through sm_90. It exposes the older `natten.functional` API,
+# which the NAF upsampler already handles: its import is wrapped in a
+# try/except that selects `legacy_attention` when the new API is absent.
+#
+# --no-deps is not optional: pip must not touch torch, whose ABI is shared with
+# o_voxel, flex_gemm, cumesh and nvdiffrast.
+RUN python3 -m pip install --no-cache-dir --force-reinstall --no-deps \
+    "https://github.com/SHI-Labs/NATTEN/releases/download/v0.17.5/natten-0.17.5%2Btorch260cu124-cp310-cp310-linux_x86_64.whl"
+
 # Pinned upstream source, copied read-only. Adaptations live in our own
 # backends/, never in here -- hard constraint 6 in CLAUDE.md.
 COPY vendor/pixal3d/ /opt/pixal3d/
