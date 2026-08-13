@@ -8,8 +8,8 @@
 - **Sprint 0 : transport Pod et GUI d'essais livres.** F00 a F06, F08 et F09 sont `passing` ;
   F07 reste `blocked`.
 - **Sprint 1 : entame.** F11 et F14 sont `passing`.
-- **Dernier gate vert** : `uv run poe check` — ruff + mypy strict + **375 tests**,
-  **13,97 s** le 2026-08-13. Aucun GPU ni reseau.
+- **Dernier gate vert** : `uv run poe check` — ruff + mypy strict + **404 tests**,
+  **14,81 s** le 2026-08-13. Aucun GPU ni reseau.
 
 ## Fait
 
@@ -25,7 +25,7 @@
 | F08 GUI d'essais | `passing` | 73 tests cibles + vrai benchmark CPU observe |
 | F09 transport ssh-pod | `passing` | 74 tests, ADR-0012 et ADR-0013 |
 | F11 recalage | `passing` | 25 tests, ADR-0006 et ADR-0007 |
-| F14 segmentation par clic | `passing` | 57 tests, ADR-0014, **modele substitue partout** |
+| F14 segmentation par clic | `passing` | 86 tests, ADR-0014, **modeles substitues partout** |
 
 ## Le jalon de la session du 2026-08-13
 
@@ -64,10 +64,26 @@ Chaine : **BiRefNet -> point d'amorce -> SAM 3 -> PNG RGBA -> Pixal3D**. BiRefNe
   *textuel*, et `Sam3Model` n'expose aucun `input_points`.
 - Ouvrir l'onglet ne telecharge rien ; le modele est construit au premier clic.
 
-**Ce que F14 ne prouve pas.** Le modele est substitue dans toute la verification : aucun poids
-SAM 3 reel n'a tourne. La qualite des masques sur metal mat au contact d'outillage metallique —
-meme matiere, memes reflets, le cas difficile — reste inconnue. Le backend BiRefNet n'existe
-toujours pas dans `backends/`. Et F14 **n'avance pas le gate F13**.
+### Ce que la revue de GUI a trouve
+
+Les tests etaient verts et la feature etait **inutilisable**. Trois defauts, tous invisibles aux
+tests parce qu'ils appelaient les methodes directement au lieu de passer par l'interface :
+
+1. **Le bouton d'enregistrement n'etait connecte a rien.** `undo` et `reset` l'etaient, pas lui.
+2. **Aucun moyen de charger une photo.** L'onglet s'ouvrait sur « aucune image » sans issue.
+3. **BiRefNet n'etait pas cable du tout.** `prompt_automatically` existait, teste, et personne
+   ne l'appelait ; aucun backend de saillance n'existait.
+
+Corriges, plus `backends/birefnet.py` (MIT, non gated, ADR-0010), l'application de l'EXIF au
+chargement, des marqueurs de points, et un apercu qui **assombrit le fond** au lieu de teinter la
+selection — la teinte etait invisible, l'accent du theme etant bleu comme la piece.
+
+Lecon a retenir : *un test qui appelle `panel.save_rgba(path)` ne prouve rien sur le bouton.*
+
+**Ce que F14 ne prouve toujours pas.** Les deux modeles sont substitues dans toute la
+verification : aucun poids SAM 3 ni BiRefNet reel n'a tourne. La qualite des masques sur metal mat
+au contact d'outillage metallique — meme matiere, memes reflets, le cas difficile — reste
+inconnue. Et F14 **n'avance pas le gate F13**.
 
 Licence gated assumee en **ADR-0014**, explicitement contre le precedent d'ADR-0010. La condition
 de reexamen y est ecrite pour etre falsifiable.

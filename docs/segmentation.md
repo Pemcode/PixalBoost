@@ -113,16 +113,39 @@ via `runner_factory`. `test_opening_the_window_does_not_touch_the_model` verifie
 - **Elle n'avance pas le gate F13.** Le benchmark synthetique rend sur fond noir avec masques
   exacts : la segmentation n'y joue aucun role. F14 sert le chemin photos reelles, et
   plausiblement le produit final, ou l'utilisateur tapera sur la piece a l'ecran.
-- **Le backend BiRefNet n'existe pas encore** dans `backends/`. Le patch vit toujours dans
-  `/workspace/run_mit.py` sur le volume RunPod (ADR-0010). `prompt_automatically` accepte donc
-  n'importe quel masque grossier ; brancher BiRefNet reste a faire.
+- **Aucune mesure sur photos reelles.** La chaine est branchee et testee, mais avec des modeles
+  substitues de bout en bout.
 - **Aucune verification sur GPU reel.** Toute la verification F14 substitue le modele. La
   qualite des masques de SAM sur pieces metalliques mates au contact d'outillage metallique
   n'est pas mesuree, et c'est precisement le cas difficile.
+
+## Parcours utilisateur
+
+Onglet **Découpe (SAM 3)** de `uv run pixaboost-gui` :
+
+| Bouton | Effet |
+|---|---|
+| **Ouvrir une photo…** | Charge l'image **et applique son EXIF**. Les 18 photos portent `Orientation=6`. |
+| **Amorcer (BiRefNet)** | Detourage grossier, puis point pose au plus profond du masque. |
+| *clic gauche* | Ajoute un point **sur la piece**. |
+| *clic droit* | Ajoute un point **a exclure** — la pince, l'elingue, l'etabli. |
+| **Annuler le dernier point** | Retire un point et relance. |
+| **Enregistrer le PNG RGBA** | Boite de dialogue, extension forcee a `.png`. |
+
+L'apercu **assombrit le fond** au lieu de teinter la selection. Une teinte a ete essayee d'abord
+et s'est revelee illisible : l'accent du theme est bleu et la piece d'essai est peinte en bleu.
+Assombrir previsualise en plus la sortie reelle — ce qui devient noir devient transparent.
+
+Les points cliques sont marques : **vert = inclure, rouge = exclure**, la meme convention que les
+labels 1 et 0 de SAM.
 
 ## Verification F14
 
 ```powershell
 uv run pytest -q tests/unit/test_segmentation.py tests/unit/test_sam3_backend.py `
-  tests/integration/test_gui_segmentation.py
+  tests/unit/test_birefnet_backend.py tests/integration/test_gui_segmentation.py
 ```
+
+Cette commande doit rester **identique** a celle de `feature_list.json`. Deux commandes de
+verification divergentes pour une meme feature, c'est le defaut trouve sur F08 le 2026-08-13 :
+celle qui n'est jamais lancee finit par ne plus rien couvrir.

@@ -301,7 +301,15 @@ class MainWindow(QMainWindow):
 
             return Sam3TrackerRunner()
 
-        self.segmentation_panel = SegmentationPanel(runner_factory=build_runner)  # type: ignore[arg-type]
+        def build_saliency() -> object:
+            from pixaboost.backends.birefnet import BiRefNetRunner
+
+            return BiRefNetRunner()
+
+        self.segmentation_panel = SegmentationPanel(
+            runner_factory=build_runner,  # type: ignore[arg-type]
+            saliency_factory=build_saliency,  # type: ignore[arg-type]
+        )
         return self.segmentation_panel
 
     def _build_live_tab(self) -> QWidget:

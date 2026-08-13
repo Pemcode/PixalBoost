@@ -22,6 +22,7 @@ import numpy as np
 from PyQt6.QtCore import QObject, QPoint, Qt, QThread, pyqtSignal
 from PyQt6.QtGui import QImage, QMouseEvent, QPixmap
 from PyQt6.QtWidgets import (
+    QFileDialog,
     QHBoxLayout,
     QLabel,
     QPushButton,
@@ -30,6 +31,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from pixaboost.backends.birefnet import SaliencyRunner
 from pixaboost.backends.sam3 import PointPrompt, Sam3Error, Sam3Runner, SegmentationResult
 from pixaboost.core.segmentation import (
     compose_rgba,
@@ -38,8 +40,13 @@ from pixaboost.core.segmentation import (
 )
 from pixaboost.gui.theme import ACCENT, DANGER, SUCCESS, TEXT_DIM
 
-#: Alpha applied to the mask overlay, high enough to read on a matte grey part.
-_OVERLAY_ALPHA = 110
+#: How much of the original brightness survives outside the mask.
+#:
+#: The overlay dims the *background* rather than tinting the selection. Tinting
+#: was tried first and is unreadable: the theme accent is blue and the test
+#: piece is painted blue, so the mask vanished into the part. Dimming also
+#: previews the actual output -- what goes dark is what becomes transparent.
+_BACKGROUND_DIM = 0.30
 
 
 @dataclass(frozen=True)
@@ -48,6 +55,31 @@ class CutoutRequest:
 
     image_path: Path
     prompts: tuple[PointPrompt, ...]
+
+
+#: Marker colours. Green includes, red excludes -- the same convention as SAM's
+#: own label values (1 and 0).
+_POSITIVE_RGB = (57, 200, 137)
+_NEGATIVE_RGB = (255, 111, 112)
+
+
+def _stamp_marker(canvas: np.ndarray, prompt: PointPrompt, radius: int | None = None) -> None:
+    """Draw a filled dot with a dark rim at one prompt, in place.
+
+    Sized as a fraction of the image so a marker stays visible on a 4000 px
+    photograph scaled down to fit a panel.
+    """
+    height, width = canvas.shape[:2]
+    if not (0 <= prompt.y < height and 0 <= prompt.x < width):
+        return
+    # ~2 % of the short side. At 90 the dot was barely two pixels once a 4000 px
+    # photograph had been scaled into the panel.
+    span = radius if radius is not None else max(4, min(height, width) // 50)
+    rows, cols = np.ogrid[:height, :width]
+    distance = (rows - prompt.y) ** 2 + (cols - prompt.x) ** 2
+    colour = _POSITIVE_RGB if prompt.positive else _NEGATIVE_RGB
+    canvas[distance <= (span + max(2, span // 2)) ** 2] = (20, 20, 24)  # rim, for contrast
+    canvas[distance <= span**2] = colour
 
 
 def auto_prompt_from_coarse_mask(coarse: np.ndarray) -> PointPrompt:
@@ -77,6 +109,7 @@ class ImageCanvas(QLabel):
         super().__init__(parent)
         self._image: np.ndarray | None = None
         self._overlay: np.ndarray | None = None
+        self._markers: tuple[PointPrompt, ...] = ()
         self.setMinimumSize(320, 240)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -98,6 +131,15 @@ class ImageCanvas(QLabel):
 
     def set_mask(self, mask: np.ndarray | None) -> None:
         self._overlay = None if mask is None else np.asarray(mask, dtype=bool)
+        self._repaint()
+
+    def set_markers(self, prompts: tuple[PointPrompt, ...]) -> None:
+        """Show where each click landed, and whether it included or excluded.
+
+        Without this the user has no way to tell a positive click from a
+        negative one after the fact, which makes correcting a bad mask guesswork.
+        """
+        self._markers = prompts
         self._repaint()
 
     def displayed_rect(self) -> tuple[int, int, int, int]:
@@ -142,16 +184,27 @@ class ImageCanvas(QLabel):
         super().resizeEvent(a0)  # type: ignore[arg-type]
         self._repaint()
 
+    def _render_composite(self) -> np.ndarray:
+        """Photo with the background dimmed wherever a mask is set.
+
+        Split out from `_repaint` so the overlay can be asserted on pixels
+        rather than on "a QPixmap was produced".
+        """
+        if self._image is None:
+            raise ValueError("no image loaded")
+        composite = self._image.copy()
+        if self._overlay is not None and self._overlay.shape == composite.shape[:2]:
+            background = ~self._overlay
+            dimmed = composite[background].astype(np.float32) * _BACKGROUND_DIM
+            composite[background] = dimmed.astype(np.uint8)
+        for prompt in self._markers:
+            _stamp_marker(composite, prompt)
+        return composite
+
     def _repaint(self) -> None:
         if self._image is None:
             return
-        composite = self._image.copy()
-        if self._overlay is not None and self._overlay.shape == composite.shape[:2]:
-            tint = np.array([59, 115, 209], dtype=np.uint16)  # theme ACCENT
-            selected = composite[self._overlay].astype(np.uint16)
-            blended = (selected * (255 - _OVERLAY_ALPHA) + tint * _OVERLAY_ALPHA) // 255
-            composite[self._overlay] = blended.astype(np.uint8)
-
+        composite = self._render_composite()
         height, width = composite.shape[:2]
         # `tobytes()` rather than the buffer: QImage does not own a numpy view,
         # and `composite` is a local that dies at the end of this method.
@@ -204,14 +257,19 @@ class SegmentationPanel(QWidget):
         runner: Sam3Runner | None = None,
         parent: QWidget | None = None,
         runner_factory: Callable[[], Sam3Runner] | None = None,
+        saliency: SaliencyRunner | None = None,
+        saliency_factory: Callable[[], SaliencyRunner] | None = None,
     ) -> None:
         super().__init__(parent)
         self._runner = runner
         self._runner_factory = runner_factory
+        self._saliency = saliency
+        self._saliency_factory = saliency_factory
         self._prompts: list[PointPrompt] = []
         self._result: SegmentationResult | None = None
         self._thread: QThread | None = None
         self._worker: _SegmentationWorker | None = None
+        self._image_path: Path | None = None
         self._build_ui()
 
     # -- construction ------------------------------------------------------
@@ -229,21 +287,103 @@ class SegmentationPanel(QWidget):
         layout.addWidget(self.status)
 
         buttons = QHBoxLayout()
+        self.load_button = QPushButton("Ouvrir une photo…")
+        self.load_button.setToolTip(
+            "Charge une photo et applique son orientation EXIF. "
+            "Les 18 photos reelles portent Orientation=6."
+        )
+        self.load_button.clicked.connect(self.browse_for_image)
+
+        self.auto_button = QPushButton("Amorcer (BiRefNet)")
+        self.auto_button.setToolTip(
+            "Detoure grossierement la scene, puis place automatiquement le point "
+            "au plus profond du masque. Le masque BiRefNet ne sort pas d'ici : "
+            "seul celui de SAM est conserve."
+        )
+        self.auto_button.clicked.connect(self.prompt_from_saliency)
+
         self.undo_button = QPushButton("Annuler le dernier point")
         self.undo_button.setToolTip("Retire le dernier clic et relance la segmentation.")
         self.undo_button.clicked.connect(self.undo_last_prompt)
+
         self.reset_button = QPushButton("Effacer les points")
         self.reset_button.setToolTip("Repart d'une image sans aucun point.")
         self.reset_button.clicked.connect(self.reset_prompts)
+
         self.save_button = QPushButton("Enregistrer le PNG RGBA")
         self.save_button.setToolTip(
             "Écrit un PNG dont l'alpha est le masque SAM. Pixal3D l'utilise tel quel "
             "et n'exécute pas son propre détourage."
         )
-        for button in (self.undo_button, self.reset_button, self.save_button):
+        self.save_button.clicked.connect(self.browse_and_save)
+
+        for button in (
+            self.load_button,
+            self.auto_button,
+            self.undo_button,
+            self.reset_button,
+            self.save_button,
+        ):
             buttons.addWidget(button)
         layout.addLayout(buttons)
         self._refresh_buttons()
+
+    # -- file dialogs ------------------------------------------------------
+
+    def browse_for_image(self) -> Path | None:
+        """Pick a photo, upright it, and load it."""
+        selected, _filter = QFileDialog.getOpenFileName(
+            self,
+            "Choisir une photo",
+            "",
+            "Images (*.png *.jpg *.jpeg *.webp *.bmp);;Tous les fichiers (*)",
+        )
+        if not selected:
+            return None
+        path = Path(selected)
+        try:
+            self.load_image(path)
+        except Exception as error:
+            self._announce(f"Image illisible : {type(error).__name__}", status="error")
+            return None
+        return path
+
+    def load_image(self, path: Path) -> None:
+        """Read a photo, applying its EXIF orientation.
+
+        All 18 real photos carry `Orientation=6` and PIL does not apply it on
+        its own, so a raw read shows the part on its side. Every click would
+        then be recorded against a different orientation than the one Pixal3D
+        finally sees.
+        """
+        from PIL import Image, ImageOps
+
+        with Image.open(path) as opened:
+            upright = ImageOps.exif_transpose(opened)
+            rgb = (upright or opened).convert("RGB")
+            self.set_image(np.asarray(rgb, dtype=np.uint8))
+        self._image_path = Path(path)
+        self._announce(f"{Path(path).name} chargée. Cliquez sur la pièce.")
+
+    def browse_and_save(self) -> Path | None:
+        """Ask where to write the cutout, then write it."""
+        if self._result is None:
+            self._announce("Aucun masque à enregistrer.", status="error")
+            return None
+        suggested = "cutout.png"
+        if self._image_path is not None:
+            suggested = f"{self._image_path.stem}_cutout.png"
+        selected, _filter = QFileDialog.getSaveFileName(
+            self, "Enregistrer la découpe", suggested, "PNG (*.png)"
+        )
+        if not selected:
+            return None
+        target = Path(selected).with_suffix(".png")
+        try:
+            return self.save_rgba(target)
+        except Exception as error:
+            self._announce(f"Écriture impossible : {error}", status="error")
+            return None
 
     # -- state -------------------------------------------------------------
 
@@ -271,9 +411,11 @@ class SegmentationPanel(QWidget):
     def set_image(self, image: np.ndarray) -> None:
         self.canvas.set_image(image)
         self.reset_prompts()
+        self._refresh_buttons()
 
     def reset_prompts(self) -> None:
         self._prompts.clear()
+        self._sync_markers()
         self._set_result(None)
         self._announce("Cliquez sur la pièce. Clic droit pour exclure ce qui la touche.")
 
@@ -281,11 +423,61 @@ class SegmentationPanel(QWidget):
         if not self._prompts:
             return
         self._prompts.pop()
+        self._sync_markers()
         if self._prompts:
             self._request_segmentation()
         else:
             self._set_result(None)
             self._announce("Plus aucun point. Cliquez sur la pièce.")
+
+    def prompt_from_saliency(self) -> None:
+        """Run BiRefNet, then place the prompt at the deepest point of its mask.
+
+        The coarse mask is consumed here and discarded. What the panel keeps,
+        displays and saves is SAM's answer -- otherwise two masks would be in
+        play with no rule saying which one wins.
+        """
+        image = self.canvas.image
+        if image is None:
+            self._announce("Chargez d'abord une photo.", status="error")
+            return
+        saliency = self._resolve_saliency()
+        if saliency is None:
+            self._announce(
+                "Aucun modèle de détourage configuré : cliquez directement sur la pièce.",
+                status="error",
+            )
+            return
+        self._announce("Détourage grossier (BiRefNet) en cours…")
+        try:
+            coarse = saliency.coarse_mask(image)
+        except Exception as error:
+            self._announce(f"Détourage impossible : {error}", status="error")
+            return
+        try:
+            self.prompt_automatically(coarse)
+        except ValueError as error:
+            self._announce(f"Masque grossier inexploitable : {error}", status="error")
+
+    def _resolve_saliency(self) -> SaliencyRunner | None:
+        if self._saliency is None and self._saliency_factory is not None:
+            self._saliency = self._saliency_factory()
+        return self._saliency
+
+    @property
+    def has_saliency_engine(self) -> bool:
+        """True once BiRefNet has actually been constructed."""
+        return self._saliency is not None
+
+    @property
+    def can_auto_prompt(self) -> bool:
+        """True when a saliency engine exists or can be built on demand.
+
+        Distinct from `has_saliency_engine`: this one is true before anything
+        is downloaded, and is what proves the window actually wired BiRefNet up
+        rather than leaving the button to fail at click time.
+        """
+        return self._saliency is not None or self._saliency_factory is not None
 
     def prompt_automatically(self, coarse_mask: np.ndarray) -> None:
         """Seed the click from a coarse saliency mask instead of a user gesture.
@@ -295,12 +487,14 @@ class SegmentationPanel(QWidget):
         """
         prompt = auto_prompt_from_coarse_mask(coarse_mask)
         self._prompts = [prompt]
+        self._sync_markers()
         self._request_segmentation()
 
     # -- interaction -------------------------------------------------------
 
     def _on_canvas_clicked(self, x: int, y: int, positive: bool) -> None:
         self._prompts.append(PointPrompt(x=x, y=y, positive=positive))
+        self._sync_markers()
         self._request_segmentation()
 
     def _request_segmentation(self) -> None:
@@ -322,6 +516,14 @@ class SegmentationPanel(QWidget):
         worker.failed.connect(self._on_failed)
         self._thread, self._worker = thread, worker
         thread.start()
+
+    def _sync_markers(self) -> None:
+        """Mirror the prompt list onto the canvas.
+
+        Called from every mutation rather than from the click handler, so
+        undo, reset and the automatic prompt cannot drift out of sync.
+        """
+        self.canvas.set_markers(self.prompts)
 
     def _resolve_runner(self) -> Sam3Runner | None:
         if self._runner is None and self._runner_factory is not None:
@@ -365,6 +567,9 @@ class SegmentationPanel(QWidget):
 
     def _refresh_buttons(self) -> None:
         busy = self._thread is not None
+        has_image = self.canvas.image is not None
+        self.load_button.setEnabled(not busy)
+        self.auto_button.setEnabled(has_image and not busy)
         self.undo_button.setEnabled(bool(self._prompts) and not busy)
         self.reset_button.setEnabled(bool(self._prompts) and not busy)
         self.save_button.setEnabled(self._result is not None and not busy)
