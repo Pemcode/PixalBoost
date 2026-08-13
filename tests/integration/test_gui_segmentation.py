@@ -677,3 +677,50 @@ def test_a_marker_outside_the_image_is_ignored_rather_than_wrapping(
     _stamp_marker(canvas, PointPrompt(x=-5, y=10))
     _stamp_marker(canvas, PointPrompt(x=10, y=99))
     assert not canvas.any()
+
+
+# --------------------------------------------------------------------------
+# what the status line is allowed to claim
+# --------------------------------------------------------------------------
+
+
+def test_a_tiny_mask_is_flagged_even_though_sam_scores_it_highly(
+    app: QApplication,
+) -> None:
+    """Measured on view01: bore click = 0.95 for 1.4 %, strap click = 0.97 for 1.8 %.
+
+    The score does not separate "the part" from "a bit of the rigging". Showing
+    it alone reads as reassurance for a mask that is plainly wrong.
+    """
+
+    class TinyButConfident:
+        def segment(
+            self, image: np.ndarray, prompts: tuple[PointPrompt, ...]
+        ) -> SegmentationResult:
+            mask = np.zeros(image.shape[:2], dtype=bool)
+            mask[0:8, 0:8] = True  # ~0.3 % of a 120x200 image
+            return SegmentationResult(mask=mask, iou_score=0.97, candidate_scores=(0.97, 0.10))
+
+    panel = SegmentationPanel(runner=TinyButConfident())
+    panel.resize(400, 300)
+    panel.set_image(photo())
+    left, top, drawn_w, drawn_h = panel.canvas.displayed_rect()
+    click(panel.canvas, left + drawn_w // 2, top + drawn_h // 2, Qt.MouseButton.LeftButton)
+    settle(app, panel)
+
+    text = panel.status.text()
+    assert "%" in text, "coverage must be shown, not only the score"
+    assert "alésage" in text or "élingue" in text, "the likely cause must be named"
+
+
+def test_a_full_sized_mask_is_reported_without_a_warning(app: QApplication) -> None:
+    panel = SegmentationPanel(runner=FakeRunner(radius=40))
+    panel.resize(400, 300)
+    panel.set_image(photo())
+    left, top, drawn_w, drawn_h = panel.canvas.displayed_rect()
+    click(panel.canvas, left + drawn_w // 2, top + drawn_h // 2, Qt.MouseButton.LeftButton)
+    settle(app, panel)
+
+    text = panel.status.text()
+    assert "%" in text
+    assert "alésage" not in text and "élingue" not in text

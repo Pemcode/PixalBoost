@@ -48,6 +48,13 @@ from pixaboost.gui.theme import ACCENT, DANGER, SUCCESS, TEXT_DIM
 #: previews the actual output -- what goes dark is what becomes transparent.
 _BACKGROUND_DIM = 0.30
 
+#: Below this share of the image, a mask is almost certainly a sub-part rather
+#: than the piece. Measured on piece_test/upright/view01.jpg: the wheel comes
+#: back at ~19 %, while a click in the bore gives 1.4 % and a click on the
+#: lifting strap 1.8 %. Advisory only -- a genuinely small part in a wide shot
+#: is legitimate, so nothing is refused.
+_SUSPICIOUSLY_SMALL_PERCENT = 4.0
+
 
 @dataclass(frozen=True)
 class CutoutRequest:
@@ -536,10 +543,23 @@ class SegmentationPanel(QWidget):
             self._announce("Résultat de segmentation inattendu.", status="error")
             return
         self._set_result(result)
-        message = f"Masque obtenu — score IoU {result.iou_score:.2f}."
-        if result.is_ambiguous:
+        coverage = float(result.mask.mean()) * 100.0
+        message = f"Masque obtenu — {coverage:.1f} % de l'image (score SAM {result.iou_score:.2f})."
+        status = "ok"
+        if coverage < _SUSPICIOUSLY_SMALL_PERCENT:
+            # Measured on view01: a click in the bore scored 0.95 for 1.4 % of the
+            # image, and a click on the lifting strap scored 0.97 for 1.8 %. The
+            # score does not separate "the part" from "a bit of the rigging"; the
+            # area does.
+            message += (
+                " Très petit : le clic est probablement tombé dans l'alésage ou sur"
+                " l'élingue. Cliquez sur la matière pleine de la pièce."
+            )
+            status = "warn"
+        elif result.is_ambiguous:
             message += " Candidats très proches : ajoutez un point pour lever le doute."
-        self._announce(message, status="ok" if not result.is_ambiguous else "warn")
+            status = "warn"
+        self._announce(message, status=status)
 
     def _on_failed(self, message: str) -> None:
         self._teardown_thread()

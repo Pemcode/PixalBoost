@@ -8,8 +8,8 @@
 - **Sprint 0 : transport Pod et GUI d'essais livres.** F00 a F06, F08 et F09 sont `passing` ;
   F07 reste `blocked`.
 - **Sprint 1 : entame.** F11 et F14 sont `passing`.
-- **Dernier gate vert** : `uv run poe check` — ruff + mypy strict + **404 tests**,
-  **14,81 s** le 2026-08-13. Aucun GPU ni reseau.
+- **Dernier gate vert** : `uv run poe check` — ruff + mypy strict + **408 tests**,
+  **20,63 s** le 2026-08-13. Aucun GPU ni reseau.
 
 ## Fait
 
@@ -80,10 +80,32 @@ selection — la teinte etait invisible, l'accent du theme etant bleu comme la p
 
 Lecon a retenir : *un test qui appelle `panel.save_rgba(path)` ne prouve rien sur le bouton.*
 
-**Ce que F14 ne prouve toujours pas.** Les deux modeles sont substitues dans toute la
-verification : aucun poids SAM 3 ni BiRefNet reel n'a tourne. La qualite des masques sur metal mat
-au contact d'outillage metallique — meme matiere, memes reflets, le cas difficile — reste
-inconnue. Et F14 **n'avance pas le gate F13**.
+### Premiere mesure sur poids reels — 2026-08-13
+
+`facebook/sam3` charge et execute en local sur `piece_test/upright/view01.jpg` (2048 x 1153),
+CPU, quatre points d'amorce. **La these de F14 est verifiee : SAM isole la roue et laisse la
+sangle de levage dehors.**
+
+| Clic | Couverture | Score SAM | Masque obtenu |
+|---|---:|---:|---|
+| jante droite | **19,4 %** | 0,976 | **roue entiere, sangle exclue** |
+| jante gauche | **19,3 %** | 0,951 | **roue entiere, sangle exclue** |
+| haut de roue (sur la sangle) | 1,8 % | 0,967 | la sangle seule |
+| centre-bas (dans l'alesage) | 1,4 % | 0,953 | quasi rien |
+
+Trois enseignements, tous mesures :
+
+1. **Le piege du centroide est reel.** Le clic tombe dans l'alesage rend 1,4 %. C'est exactement
+   ce que `deepest_interior_point` evite, et la raison d'etre de `core/segmentation.py`.
+2. **Le score de SAM ne mesure pas la justesse.** Les quatre resultats sont entre 0,95 et 0,98,
+   y compris les deux mauvais. Il dit « ce masque est net », pas « c'est la bonne piece ». La GUI
+   affiche donc desormais la **couverture** en premier et alerte sous 4 %.
+3. **Cout CPU** : ~19 s par clic sur 2048 px, chargement ~40 s depuis le cache. Utilisable, mais
+   la version CUDA s'impose pour un usage interactif.
+
+**Ce que F14 ne prouve toujours pas.** BiRefNet n'a jamais tourne pour de vrai (seul SAM 3 l'a
+fait). Une seule photo, une seule piece, aucune metrique contre une verite terrain — l'evaluation
+est visuelle. Et F14 **n'avance pas le gate F13**.
 
 Licence gated assumee en **ADR-0014**, explicitement contre le precedent d'ADR-0010. La condition
 de reexamen y est ecrite pour etre falsifiable.
