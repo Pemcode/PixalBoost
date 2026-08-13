@@ -284,7 +284,25 @@ class MainWindow(QMainWindow):
         tabs.setAccessibleDescription("Suivi en direct et inventaire des artefacts locaux.")
         tabs.addTab(self._build_live_tab(), "Suivi")
         tabs.addTab(self._build_artifacts_tab(), "Artefacts locaux")
+        tabs.addTab(self._build_segmentation_tab(), "Découpe (SAM 3)")
         return tabs
+
+    def _build_segmentation_tab(self) -> QWidget:
+        """Click-to-segment panel (F14).
+
+        The runner is built lazily, on the first click: constructing it downloads
+        3.4 GB of gated weights, which must never happen because someone opened
+        a tab. Until then the panel simply has no engine, and says so.
+        """
+        from pixaboost.gui.segmentation_view import SegmentationPanel
+
+        def build_runner() -> object:
+            from pixaboost.backends.sam3 import Sam3TrackerRunner
+
+            return Sam3TrackerRunner()
+
+        self.segmentation_panel = SegmentationPanel(runner_factory=build_runner)  # type: ignore[arg-type]
+        return self.segmentation_panel
 
     def _build_live_tab(self) -> QWidget:
         tab = QWidget()

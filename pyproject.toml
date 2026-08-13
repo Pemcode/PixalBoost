@@ -15,6 +15,13 @@ gui = [
     "paramiko>=3.5,<5",
     "PyQt6>=6.6,<7",
 ]
+# SAM 3 click segmentation (F14). Deliberately NOT in `dev`: it pulls ~3 GB of
+# wheels and the gate must stay installable on free CI. Everything in
+# `backends/sam3.py` imports it lazily. See ADR-0014.
+segmentation = [
+    "torch>=2.6",
+    "transformers>=4.60",
+]
 
 [project.scripts]
 pixaboost = "pixaboost.cli:main"
@@ -80,4 +87,10 @@ warn_unreachable = true
 
 [[tool.mypy.overrides]]
 module = ["trimesh.*", "open3d.*", "scipy.*", "lpips.*"]
+ignore_missing_imports = true
+
+# Optional heavyweight extras. They are imported lazily inside `backends/`, so
+# the CPU gate type-checks without ever installing 3 GB of wheels.
+[[tool.mypy.overrides]]
+module = ["torch.*", "transformers.*"]
 ignore_missing_imports = true

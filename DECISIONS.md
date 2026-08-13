@@ -365,3 +365,58 @@ l'argent sur un evenement qui ne devrait pas se produire. L'humain doit voir la 
 **Verification.** Prouve par injection, pas par construction : `test_cache.py` altere de vrais
 octets stockes, tue un vrai processus detenteur, et verifie qu'un proprietaire vivant resiste au
 vol.
+
+---
+
+## ADR-0014 — Accepter une licence gated pour SAM 3, contre le precedent d'ADR-0010
+
+**Date** : 2026-08-13 · **Statut** : accepte · **Origine** : F14
+
+**Decision.** Le projet utilise `facebook/sam3` pour la segmentation par clic, alors que ce depot
+est **gated** et sous `license: other` (« SAM License » de Meta). C'est exactement la propriete
+pour laquelle ADR-0010 a rejete `briaai/RMBG-2.0`.
+
+**Ce que la verification a etabli** (aout 2026, sources primaires, pas de memoire) :
+
+| | SAM 3 | SAM 2.1 Hiera-Large |
+|---|---|---|
+| Licence | « SAM License » custom, **gated** | **apache-2.0**, non gated |
+| Parametres | 0,9 Md | 0,2 Md |
+| VRAM inference | < 4 Go | nettement moins |
+| Clic (points) | oui, via `Sam3TrackerModel` | oui |
+| Usage commercial | autorise, avec restrictions | sans restriction |
+
+Restrictions de la SAM License : conformite aux controles a l'export (pas d'usage militaire,
+nucleaire, armement), pas de retro-ingenierie, attribution en publication, redistribution des
+derives sous la meme licence. Pas de seuil d'utilisateurs actifs.
+
+**L'argument contre, enonce en toute franchise.** La nouveaute de SAM 3 est la segmentation par
+*concept* (texte, exemplar). Notre besoin est un **clic**, c'est-a-dire de la segmentation
+visuelle promptable — ce que SAM 1 et SAM 2 font depuis toujours, et ce que SAM 3 lui-meme
+delegue a `Sam3TrackerModel`, decrit en amont comme « SAM 2 avec la meme API ». Autrement dit :
+**on paie un cout juridique et operationnel pour une capacite qu'on n'utilise pas.** ADR-0010
+avait rejete RMBG-2.0 sur ce raisonnement precis, avec un equivalent MIT disponible.
+
+**Pourquoi la decision est prise quand meme.** Le proprietaire du depot a tranche apres que ce
+conflit lui a ete presente explicitement, jeton Hugging Face fourni a l'appui. C'est une decision
+de produit qui lui revient, et l'ecart de qualite de masque sur le cas difficile — outillage
+metallique au contact d'une piece metallique, meme matiere et memes reflets — n'est pas mesure et
+pourrait justifier l'ecart.
+
+**Ce que la decision engage concretement.**
+1. Un jeton circule desormais dans le code. `backends/sam3.py` ne le fait jamais apparaitre dans
+   une exception, et un test injecte une vraie fuite (`401 ... Bearer hf_...`) pour le prouver.
+2. Tout nouveau contributeur, et tout pod reconstruit, doit accepter la licence sur le Hub avec le
+   compte proprietaire du jeton. C'est un point de friction manuel, comme `setup_pod.sh`.
+3. L'extra `segmentation` reste hors du groupe `dev` : ~3 Go, et le gate CPU doit rester
+   installable en CI gratuite.
+
+**Condition de reexamen — ecrite pour etre falsifiable.** Si, sur les photos reelles, SAM 2.1
+(Apache) produit des masques de qualite comparable a SAM 3 sur le cas « pince au contact de la
+piece », le cout juridique n'est plus paye pour rien et **on repasse a SAM 2.1**. La mesure
+n'a pas ete faite. Tant qu'elle ne l'est pas, ADR-0014 repose sur une preference, pas sur une
+mesure — et le present paragraphe existe pour que ce fait ne se perde pas.
+
+**Frontiere preservee.** `core/` ne connait ni SAM, ni torch, ni le Hub : il ne manipule que des
+masques booleens et des tableaux uint8. La contrainte n°4 est intacte, et la contrainte n°11
+aussi — rien ici ne fusionne quoi que ce soit.

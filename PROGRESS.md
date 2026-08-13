@@ -7,9 +7,9 @@
 
 - **Sprint 0 : transport Pod et GUI d'essais livres.** F00 a F06, F08 et F09 sont `passing` ;
   F07 reste `blocked`.
-- **Sprint 1 : entame.** F11 est `passing`.
-- **Dernier gate vert** : `uv run poe check` — ruff + mypy strict + **315 tests**,
-  **13,09 s** le 2026-08-13. Aucun GPU ni reseau.
+- **Sprint 1 : entame.** F11 et F14 sont `passing`.
+- **Dernier gate vert** : `uv run poe check` — ruff + mypy strict + **375 tests**,
+  **13,97 s** le 2026-08-13. Aucun GPU ni reseau.
 
 ## Fait
 
@@ -25,6 +25,7 @@
 | F08 GUI d'essais | `passing` | 73 tests cibles + vrai benchmark CPU observe |
 | F09 transport ssh-pod | `passing` | 74 tests, ADR-0012 et ADR-0013 |
 | F11 recalage | `passing` | 25 tests, ADR-0006 et ADR-0007 |
+| F14 segmentation par clic | `passing` | 57 tests, ADR-0014, **modele substitue partout** |
 
 ## Le jalon de la session du 2026-08-13
 
@@ -42,6 +43,34 @@
 La verification F08 compte 73 tests verts. Le controleur a aussi lance la vraie commande de
 benchmark par defaut : 58 evenements, succes en 3,97 s et manifeste produit. Aucun appel GPU,
 aucun reseau payant et aucune operation sur des credits n'ont ete effectues.
+
+## F14 — segmentation par clic (SAM 3)
+
+**Le probleme reel** : sur les photos, la piece est suspendue a une **pince de levage** par une
+elingue, posee au contact d'un etabli. BiRefNet garde la pince, et il a raison : il fait de la
+detection d'objet saillant, il repond a « qu'est-ce qui est au premier plan ? », sans notion
+d'identite d'objet. SAM fait de la segmentation d'instance promptable — « quel objet, sachant cet
+indice ? ». C'est structurellement une autre question, pas un meilleur detourage.
+
+Chaine : **BiRefNet -> point d'amorce -> SAM 3 -> PNG RGBA -> Pixal3D**. BiRefNet est demote en
+*generateur de prompt* ; son masque ne sort jamais du systeme. Le masque de SAM fait foi.
+
+- Le PNG RGBA court-circuite proprement le detourage amont : `preprocess_image` n'appelle pas
+  rembg si l'alpha n'est pas uniformement 255. `compose_rgba` **refuse** un masque plein pour
+  cette raison — l'erreur tombe sur CPU, pas sur GPU facture. Aucune modification de `vendor/`.
+- Le prompt automatique est le **maximum de la transformee de distance**, pas le centroide : la
+  piece est une roue a alesage central et son centroide tombe dans le trou, donc dans le fond.
+- Le clic passe par `Sam3TrackerModel`, pas `Sam3Model` : la nouveaute de SAM 3 est le prompt
+  *textuel*, et `Sam3Model` n'expose aucun `input_points`.
+- Ouvrir l'onglet ne telecharge rien ; le modele est construit au premier clic.
+
+**Ce que F14 ne prouve pas.** Le modele est substitue dans toute la verification : aucun poids
+SAM 3 reel n'a tourne. La qualite des masques sur metal mat au contact d'outillage metallique —
+meme matiere, memes reflets, le cas difficile — reste inconnue. Le backend BiRefNet n'existe
+toujours pas dans `backends/`. Et F14 **n'avance pas le gate F13**.
+
+Licence gated assumee en **ADR-0014**, explicitement contre le precedent d'ADR-0010. La condition
+de reexamen y est ecrite pour etre falsifiable.
 
 ## Ce que la revue de cloture du 2026-08-13 a corrige
 
