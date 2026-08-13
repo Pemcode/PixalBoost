@@ -101,8 +101,11 @@ class BiRefNetRunner:
             if self.half_precision and self._device.startswith("cuda"):
                 model = model.half()
         except Exception as error:
+            # No token is involved here (the repo is public), so the upstream
+            # text is kept verbatim -- it is what names a missing dependency.
             raise SaliencyError(
-                f"could not load {self.checkpoint} on {self._device}: {type(error).__name__}"
+                f"could not load {self.checkpoint} on {self._device}: "
+                f"{type(error).__name__}: {error}"
             ) from None
         self._model = model
 

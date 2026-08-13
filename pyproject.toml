@@ -20,6 +20,9 @@ gui = [
 # `backends/sam3.py` imports it lazily. See ADR-0014.
 segmentation = [
     "torch>=2.6",
+    # Required, not optional: Sam3ImageProcessor refuses to build without it,
+    # and the failure surfaces inside from_pretrained rather than at import.
+    "torchvision>=0.21",
     "transformers>=4.60",
 ]
 
@@ -89,8 +92,13 @@ warn_unreachable = true
 module = ["trimesh.*", "open3d.*", "scipy.*", "lpips.*"]
 ignore_missing_imports = true
 
-# Optional heavyweight extras. They are imported lazily inside `backends/`, so
-# the CPU gate type-checks without ever installing 3 GB of wheels.
+# Optional heavyweight extras, imported lazily inside `backends/`.
+#
+# `follow_imports = "skip"` is the important half: without it the gate's verdict
+# depends on whether `--extra segmentation` happens to be installed. It was
+# green on a machine without transformers and red on one with it, which is a
+# gate that cannot be trusted. Skipping makes both machines agree.
 [[tool.mypy.overrides]]
-module = ["torch.*", "transformers.*"]
+module = ["torch.*", "torchvision.*", "transformers.*"]
 ignore_missing_imports = true
+follow_imports = "skip"

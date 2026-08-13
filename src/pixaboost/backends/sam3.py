@@ -25,6 +25,7 @@ importing this module -- which `poe check` does -- stays free.
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Protocol
@@ -42,8 +43,26 @@ BoolArray = np.ndarray
 class Sam3Error(RuntimeError):
     """SAM 3 could not be loaded or produced nothing usable.
 
-    Never carries a token: messages are built from paths and shapes only.
+    Never carries a token: upstream text is passed through `redact_token`.
     """
+
+
+#: Any Hugging Face-shaped token, whoever emitted it. The explicit token is
+#: redacted too, in case the Hub ever echoes it in some other shape.
+_TOKEN_PATTERN = re.compile(r"(?i)(?<![A-Za-z0-9_.-])hf_[A-Za-z0-9_.-]{4,}")
+
+
+def redact_token(text: str, token: str | None = None) -> str:
+    """Strip credentials from text that is about to be shown or logged.
+
+    Dropping the message instead was tried and is worse: it turned a missing
+    `torchvision` into a bare "ImportError" that looked like an auth failure,
+    and cost a debugging session. Keep the diagnosis, remove the secret.
+    """
+    cleaned = _TOKEN_PATTERN.sub("<redacted>", text)
+    if token:
+        cleaned = cleaned.replace(token, "<redacted>")
+    return cleaned
 
 
 @dataclass(frozen=True)
@@ -190,12 +209,13 @@ class Sam3TrackerRunner:
                 self.checkpoint, token=token, dtype=dtype
             ).to(device)
         except Exception as error:
-            # Deliberately re-raised without the original text when it could
-            # echo an Authorization header back into a log.
+            # Redact the token, keep the text. An earlier version dropped the
+            # message entirely and reported only the exception class, which
+            # turned a plain missing-torchvision install into an unactionable
+            # "ImportError" that read like an auth failure.
             raise Sam3Error(
-                f"could not load {self.checkpoint} on {device}: {type(error).__name__}. "
-                "If this is a 401 or 403, accept the SAM License at "
-                f"https://huggingface.co/{self.checkpoint} with the account owning the token."
+                f"could not load {self.checkpoint} on {device}: "
+                f"{type(error).__name__}: {redact_token(str(error), token)}"
             ) from None
         self._model.eval()
 

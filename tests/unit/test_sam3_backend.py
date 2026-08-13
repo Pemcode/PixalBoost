@@ -142,7 +142,11 @@ def test_no_error_message_ever_contains_the_token(
 
     assert FAKE_TOKEN not in str(error.value)
     assert FAKE_TOKEN not in repr(error.value)
-    assert "accept the SAM License" in str(error.value), "the fix must be actionable"
+    assert "<redacted>" in str(error.value)
+    assert "401 Unauthorized" in str(error.value), (
+        "redaction must not swallow the diagnosis: dropping the message turned a "
+        "missing torchvision into an unactionable bare ImportError"
+    )
 
 
 def test_a_missing_token_is_refused_before_any_download_is_attempted(
