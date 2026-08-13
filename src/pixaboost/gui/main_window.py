@@ -285,7 +285,20 @@ class MainWindow(QMainWindow):
         tabs.addTab(self._build_live_tab(), "Suivi")
         tabs.addTab(self._build_artifacts_tab(), "Artefacts locaux")
         tabs.addTab(self._build_segmentation_tab(), "Découpe (SAM 3)")
+        tabs.addTab(self._build_two_view_tab(), "Reconstruction 2 vues")
         return tabs
+
+    def _build_two_view_tab(self) -> QWidget:
+        """Two photographs into one aligned GLB (F15).
+
+        No runner is injected here: reconstructing each photograph needs an
+        active Pod (F07), so the panel says so rather than pretending. Wiring
+        it is the next step once the Pod path is proven end to end.
+        """
+        from pixaboost.gui.two_view_view import TwoViewPanel
+
+        self.two_view_panel = TwoViewPanel(runs_root=self.repo_root / "runs")
+        return self.two_view_panel
 
     def _build_segmentation_tab(self) -> QWidget:
         """Click-to-segment panel (F14).

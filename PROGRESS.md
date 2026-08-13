@@ -7,7 +7,7 @@
 
 - **Sprint 0 : transport Pod et GUI d'essais livres.** F00 a F06, F08 et F09 sont `passing` ;
   F07 reste `blocked`.
-- **Sprint 1 : entame.** F11 et F14 sont `passing`.
+- **Sprint 1 : entame.** F11, F14 et F15 sont `passing`.
 - **Dernier gate vert** : `uv run poe check` — ruff + mypy strict + **408 tests**,
   **20,63 s** le 2026-08-13. Aucun GPU ni reseau.
 
@@ -26,6 +26,7 @@
 | F09 transport ssh-pod | `passing` | 74 tests, ADR-0012 et ADR-0013 |
 | F11 recalage | `passing` | 25 tests, ADR-0006 et ADR-0007 |
 | F14 segmentation par clic | `passing` | 86 tests, ADR-0014, **modeles substitues partout** |
+| F15 pose 2 vues sans calibration | `passing` | 45 tests, **jamais teste sur vraies photos** |
 
 ## Le jalon de la session du 2026-08-13
 
@@ -109,6 +110,35 @@ est visuelle. Et F14 **n'avance pas le gate F13**.
 
 Licence gated assumee en **ADR-0014**, explicitement contre le precedent d'ADR-0010. La condition
 de reexamen y est ecrite pour etre falsifiable.
+
+## F15 — deux vues sans calibration
+
+**L'objet est sa propre mire.** Pixal3D est pixel-aligne et ne rend aucune extrinseque : deux
+photos donnent deux objets dans deux reperes sans relation. Plutot que de poser une mire ou un
+plateau indexe, on **derive** la pose : on cherche la rotation dont la silhouette rendue de la
+reconstruction A colle au masque de la photo B.
+
+- Le rasteriseur de F03 fait tout le travail. Aucun GPU, aucun modele, aucune dependance nouvelle.
+- **Les silhouettes survivent au metal** : un appariement photometrique echouerait sur une piece
+  mate a reflets mobiles ; un contour non.
+- **ADR-0007 s'inverse.** Il refuse une pose ambigue parce qu'une pose fausse etale une fusion.
+  Ici la pose ne sert qu'a *rendre*, et une rotation autour d'un axe de symetrie reel ne change
+  pas le rendu : l'ambiguite est signalee et ne coute rien. Un test l'exige explicitement.
+- Le masque de la photo passe par **le meme recadrage que `preprocess_image`** (carre autour de
+  la bbox, x1.1). Sans cette etape on compare deux cadrages differents et la recherche converge
+  sur une reponse confiante et fausse — c'etait le « tueur silencieux » identifie dans le vendor.
+
+**Le GLB ne fusionne rien.** Il juxtapose les deux reconstructions dans un repere commun ;
+le nombre de faces est exactement additif, et un test l'exige. La contrainte n°11 reste entiere.
+L'artefact sert a repondre a une seule question : les deux moities se superposent-elles ?
+
+**Limite mesuree et epinglee** : un masque en barre score 0,94 contre un L-bracket — qui vu de
+chant *est* une barre. La silhouette seule ne distingue pas un vrai accord d'une vue degeneree.
+`pose_iou` ne prouve donc rien seul ; `agreement_iou` et l'inspection du GLB sont les garde-fous.
+Un masque topologiquement impossible (un anneau) fait bien s'effondrer le score.
+
+**Non verifie de bout en bout** : reconstruire chaque photo exige un Pod actif (F07 bloquee).
+Le bouton existe, s'active avec deux photos, et le dit.
 
 ## Ce que la revue de cloture du 2026-08-13 a corrige
 

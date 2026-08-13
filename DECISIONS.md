@@ -420,3 +420,56 @@ mesure — et le present paragraphe existe pour que ce fait ne se perde pas.
 **Frontiere preservee.** `core/` ne connait ni SAM, ni torch, ni le Hub : il ne manipule que des
 masques booleens et des tableaux uint8. La contrainte n°4 est intacte, et la contrainte n°11
 aussi — rien ici ne fusionne quoi que ce soit.
+
+---
+
+## ADR-0015 — La pose sans calibration se derive par rendu-comparaison, et l'axisymetrie devient un atout
+
+**Date** : 2026-08-13 · **Statut** : accepte · **Origine** : F15
+
+**Decision.** La pose relative entre deux prises de vue non calibrees est obtenue en cherchant la
+rotation dont la **silhouette rendue** de la premiere reconstruction maximise l'IoU avec le
+**masque de la seconde photo**. Pas de mire, pas de plateau indexe, pas d'estimateur de pose
+appris. Le rasteriseur CPU de F03 fait tout le travail.
+
+**Raison.** Pixal3D est pixel-aligne et ne rend aucune extrinseque : deux photos donnent deux
+objets dans deux reperes sans relation lisible. Les trois alternatives ont chacune un defaut
+disqualifiant dans notre contexte.
+
+| Alternative | Pourquoi rejetee |
+|---|---|
+| Mire ArUco / ChArUco | impose de refaire toute la prise de vue ; l'utilisateur a pose « sans calibration » comme contrainte |
+| VGGT / MASt3R | deduisent la pose du mouvement de la **scene**. En atelier on tourne la piece, pas la camera : ils voient une camera fixe |
+| ICP 3D-3D entre les deux reconstructions | ADR-0006 : bassin ~20 deg, donc il faut deja une initialisation — c'est le probleme qu'on cherche a resoudre |
+
+Le rendu-comparaison s'aligne sur **l'objet** et non sur la scene, ce qui le rend indifferent a
+ce qui bouge autour. Et les silhouettes survivent au metal mat a reflets mobiles, la ou tout
+appariement photometrique echouerait.
+
+**Le retournement d'ADR-0007.** Cet ADR refuse une pose ambigue, et il a raison **quand la pose
+est estimee depuis la geometrie seule** : une pose fausse etale une fusion sans rien signaler.
+Ici la pose ne sert qu'a **rendre**. Une rotation autour d'un axe de symetrie reel laisse le
+rendu inchange, donc l'ambiguite est signalee et **ne coute rien**. Mieux : sur une piece
+axisymetrique la pose passe de 6 degres de liberte a 1, et ce dernier est sans effet.
+
+Ce n'est pas une contradiction d'ADR-0007 mais une restriction de son domaine : *l'ambiguite de
+pose est nocive pour la fusion, inoffensive pour le rendu*.
+
+**Le piege du cadrage, sans lequel tout ceci serait faux.** `preprocess_image` recadre chaque vue
+sur sa propre bbox alpha, en carre, x1.1. Comparer un masque brut a un rendu canonique compare
+deux cadrages differents : les silhouettes se recouvrent quand meme, la recherche converge, et la
+reponse est confiante et fausse. `crop_to_canonical_framing` applique la meme regle **aux deux
+cotes**, ce qui laisse la recherche sur la rotation seule.
+
+**Limite mesuree, pas supposee.** Un masque en barre score **0,94** contre un L-bracket, qui vu
+de chant *est* une barre. La silhouette ne distingue pas un vrai accord d'une vue degeneree qui
+coincide. `pose_iou` seul ne prouve donc rien ; c'est pourquoi `agreement_iou` existe et pourquoi
+le livrable est un GLB qu'un humain regarde. Un test epingle cette limite explicitement, pour
+qu'elle ne soit pas redecouverte sur de vraies photos.
+
+**Ce que cela ne fait pas.** Aucune fusion : le GLB juxtapose les deux maillages dans un repere
+commun, nombre de faces exactement additif. La contrainte n°11 reste entiere. Aucune echelle
+absolue non plus — une cote mesuree la fixe, rien de monoculaire ne le fait.
+
+**Reexamen.** Quand F07 sera debloquee et qu'un GLB aura ete produit depuis deux vraies
+photographies. C'est la seule mesure qui compte, et elle n'a pas encore eu lieu.

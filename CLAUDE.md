@@ -80,6 +80,7 @@ vendor/pixal3d/           Submodule Pixal3D, lecture seule
 | `docs/benchmark.md` | Avant de toucher a `bench/` ou aux metriques. |
 | `docs/gpu-runtime.md` | Avant de lancer quoi que ce soit sur RunPod ou de toucher a `docker/`. |
 | `docs/gui.md` | Architecture, commandes et exclusions de la GUI d'essais. |
+| `docs/two-view.md` | Avant de toucher a la pose sans calibration (`core/pose_search.py`). |
 | `docs/segmentation.md` | Avant de toucher a la segmentation par clic (SAM 3, `core/segmentation.py`). |
 | `DECISIONS.md` | Avant de remettre en cause un choix : la raison y est deja. |
 

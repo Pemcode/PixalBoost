@@ -149,3 +149,27 @@ def test_depth_interpolation_is_perspective_correct() -> None:
     bary = np.vstack([weights, 1.0 - weights.sum(axis=0)])
     expected = 1.0 / (bary / vertex_depth[:, None]).sum(axis=0)
     np.testing.assert_allclose(depth[hit], expected, rtol=1e-6)
+
+
+def test_a_degenerate_face_is_background_without_warning() -> None:
+    """An edge-on triangle divides by zero internally; it must stay silent.
+
+    Surfaced by the F15 pose search, which sweeps orientations and therefore
+    hits exactly-edge-on faces routinely. The pixels were already correct --
+    the warning was not.
+    """
+    import warnings
+
+    from pixaboost.core.geometry import BlenderCamera, front_view_camera
+    from pixaboost.core.render import rasterise_silhouette
+
+    # A triangle lying in the plane that contains the viewing direction.
+    vertices = np.array([[0.0, -0.2, 0.0], [0.0, 0.2, 0.0], [0.0, 0.0, 0.3]])
+    faces = np.array([[0, 1, 2]])
+    camera = BlenderCamera(camera_angle_x=0.857556, resolution=32)
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        mask = rasterise_silhouette(vertices, faces, front_view_camera(2.0), camera)
+
+    assert mask.shape == (32, 32)

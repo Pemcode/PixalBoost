@@ -100,7 +100,12 @@ def _rasterise(
         inverse_depth = (
             weight_0 / corner_depth[0] + weight_1 / corner_depth[1] + weight_2 / corner_depth[2]
         )
-        candidate = np.where(inside & (inverse_depth > 0.0), 1.0 / inverse_depth, np.inf)
+        # `np.where` evaluates both branches, so the reciprocal runs even for
+        # the degenerate pixels it then discards. The result is already
+        # correct -- only the warning is noise, and a noisy suite hides the
+        # warnings that do matter.
+        with np.errstate(divide="ignore", invalid="ignore"):
+            candidate = np.where(inside & (inverse_depth > 0.0), 1.0 / inverse_depth, np.inf)
 
         rows_slice = slice(min_row, max_row + 1)
         cols_slice = slice(min_col, max_col + 1)
