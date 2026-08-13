@@ -1,0 +1,159 @@
+{
+  "part": "Roue/moyeu en acier moule, repere 249. Axisymetrique autour de son alesage.",
+  "session": "2026-08-07, atelier",
+  "pose_convention": null,
+  "poses_known": false,
+  "why_no_poses": "La piece etait suspendue a une pince de levage et une elingue: son orientation variait librement entre les prises. Le protocole 6 azimuts x 3 elevations decrit l intention, pas la donnee. Etiqueter des angles ici serait une affirmation fausse, et F10 les reprendrait comme initialisations nominales.",
+  "known_defects": [
+    "EXIF Orientation=6 sur les 18: PIL ne l applique pas, Pixal3D verrait les images couchees.",
+    "Pince de levage et elingue en contact avec la piece: seront segmentees comme faisant partie de l objet.",
+    "Arriere-plans d atelier charges (racks, palettes, fenetres, etabli au contact)."
+  ],
+  "upright_dir": "upright/ contient les copies redressees (EXIF applique) et reduites a 2048 px.",
+  "views": [
+    {
+      "view": "view01.jpg",
+      "original": "20260807_071347.jpg",
+      "captured_at": "2026-08-07T07:13:47",
+      "order": 1,
+      "azimuth_deg": null,
+      "elevation_deg": null
+    },
+    {
+      "view": "view02.jpg",
+      "original": "20260807_071354.jpg",
+      "captured_at": "2026-08-07T07:13:54",
+      "order": 2,
+      "azimuth_deg": null,
+      "elevation_deg": null
+    },
+    {
+      "view": "view03.jpg",
+      "original": "20260807_071358.jpg",
+      "captured_at": "2026-08-07T07:13:58",
+      "order": 3,
+      "azimuth_deg": null,
+      "elevation_deg": null
+    },
+    {
+      "view": "view04.jpg",
+      "original": "20260807_071402.jpg",
+      "captured_at": "2026-08-07T07:14:02",
+      "order": 4,
+      "azimuth_deg": null,
+      "elevation_deg": null
+    },
+    {
+      "view": "view05.jpg",
+      "original": "20260807_071449.jpg",
+      "captured_at": "2026-08-07T07:14:49",
+      "order": 5,
+      "azimuth_deg": null,
+      "elevation_deg": null
+    },
+    {
+      "view": "view06.jpg",
+      "original": "20260807_071454.jpg",
+      "captured_at": "2026-08-07T07:14:54",
+      "order": 6,
+      "azimuth_deg": null,
+      "elevation_deg": null
+    },
+    {
+      "view": "view07.jpg",
+      "original": "20260807_071518.jpg",
+      "captured_at": "2026-08-07T07:15:18",
+      "order": 7,
+      "azimuth_deg": null,
+      "elevation_deg": null
+    },
+    {
+      "view": "view08.jpg",
+      "original": "20260807_071522.jpg",
+      "captured_at": "2026-08-07T07:15:22",
+      "order": 8,
+      "azimuth_deg": null,
+      "elevation_deg": null
+    },
+    {
+      "view": "view09.jpg",
+      "original": "20260807_071541.jpg",
+      "captured_at": "2026-08-07T07:15:41",
+      "order": 9,
+      "azimuth_deg": null,
+      "elevation_deg": null
+    },
+    {
+      "view": "view10.jpg",
+      "original": "20260807_071544.jpg",
+      "captured_at": "2026-08-07T07:15:44",
+      "order": 10,
+      "azimuth_deg": null,
+      "elevation_deg": null
+    },
+    {
+      "view": "view11.jpg",
+      "original": "20260807_071554.jpg",
+      "captured_at": "2026-08-07T07:15:54",
+      "order": 11,
+      "azimuth_deg": null,
+      "elevation_deg": null
+    },
+    {
+      "view": "view12.jpg",
+      "original": "20260807_071557.jpg",
+      "captured_at": "2026-08-07T07:15:57",
+      "order": 12,
+      "azimuth_deg": null,
+      "elevation_deg": null
+    },
+    {
+      "view": "view13.jpg",
+      "original": "20260807_071623.jpg",
+      "captured_at": "2026-08-07T07:16:23",
+      "order": 13,
+      "azimuth_deg": null,
+      "elevation_deg": null
+    },
+    {
+      "view": "view14.jpg",
+      "original": "20260807_071627.jpg",
+      "captured_at": "2026-08-07T07:16:27",
+      "order": 14,
+      "azimuth_deg": null,
+      "elevation_deg": null
+    },
+    {
+      "view": "view15.jpg",
+      "original": "20260807_071635.jpg",
+      "captured_at": "2026-08-07T07:16:35",
+      "order": 15,
+      "azimuth_deg": null,
+      "elevation_deg": null
+    },
+    {
+      "view": "view16.jpg",
+      "original": "20260807_071640.jpg",
+      "captured_at": "2026-08-07T07:16:40",
+      "order": 16,
+      "azimuth_deg": null,
+      "elevation_deg": null
+    },
+    {
+      "view": "view17.jpg",
+      "original": "20260807_071653.jpg",
+      "captured_at": "2026-08-07T07:16:53",
+      "order": 17,
+      "azimuth_deg": null,
+      "elevation_deg": null
+    },
+    {
+      "view": "view18.jpg",
+      "original": "20260807_071702.jpg",
+      "captured_at": "2026-08-07T07:17:02",
+      "order": 18,
+      "azimuth_deg": null,
+      "elevation_deg": null
+    }
+  ]
+}

@@ -40,3 +40,14 @@ Thumbs.db
 
 # Wheels telecharges pour inspection (ils ont deja fait exploser un push a 493 Mo)
 *.whl
+
+# Derives des photos reelles. Les 18 originaux (piece_test/view01..18.jpg) sont la source
+# versionnee ; tout le reste se recalcule a partir d'eux et pese ~30 Mo d'incompressible.
+#   upright/ = EXIF Orientation applique + reduction a 2048 px
+#   preview/ = vignettes PNG carrees
+piece_test/upright/
+piece_test/preview/
+piece_upright.tgz
+
+# Captures d'ecran de mise au point de la GUI
+*.tmp.png

@@ -13,14 +13,36 @@ downstream metric while looking like a cache hit.
 from __future__ import annotations
 
 import json
+import multiprocessing
+import time
 from pathlib import Path
+from typing import Any
 
 import pytest
 
-from pixaboost.backends.cache import ArtifactCache, cache_key
+from pixaboost.backends.cache import (
+    ArtifactCache,
+    CacheCorruptionError,
+    CacheReservationTimeoutError,
+    cache_key,
+)
 
 IMAGE = b"\x89PNG\r\n\x1a\n fake image bytes"
 PARAMS = {"seed": 42, "resolution": 1024, "low_vram": True}
+
+
+def _hold_cache_reservation(root: str, ready: Any) -> None:
+    """Acquire a real interprocess reservation, then wait to be terminated by the test."""
+    with ArtifactCache(root).reserve(
+        "shared-key",
+        timeout_seconds=2.0,
+        stale_after_seconds=60.0,
+        poll_interval_seconds=0.01,
+    ):
+        ready.set()
+        time.sleep(30.0)
+
+
 REVISION = "cdbb2bb"
 
 
@@ -95,6 +117,7 @@ def test_metadata_records_the_payload_size_and_key(tmp_path: Path) -> None:
     assert stored["glb_bytes"] == 10
     assert stored["key"] == "abc123"
     assert stored["seed"] == 1
+    assert stored["glb_sha256"]
 
 
 def test_a_half_written_entry_is_not_a_hit(tmp_path: Path) -> None:
@@ -138,3 +161,84 @@ def test_the_cache_root_is_created_on_demand(tmp_path: Path) -> None:
     root = tmp_path / "does" / "not" / "exist"
     ArtifactCache(root).store("abc123", glb=b"x", metadata={})
     assert (root / "abc123" / "output.glb").is_file()
+
+
+def test_tampered_cached_bytes_are_a_blocking_corruption_not_a_miss(tmp_path: Path) -> None:
+    cache = ArtifactCache(tmp_path)
+    cache.store("abc123", glb=b"first", metadata={"seed": 1})
+    (tmp_path / "abc123" / "output.glb").write_bytes(b"other")
+    with pytest.raises(CacheCorruptionError, match="SHA-256"):
+        cache.load("abc123")
+
+
+def test_completion_marker_without_glb_is_a_blocking_corruption(tmp_path: Path) -> None:
+    entry = tmp_path / "abc123"
+    entry.mkdir()
+    (entry / "meta.json").write_text(
+        '{"key":"abc123","glb_bytes":12,"glb_sha256":"' + "0" * 64 + '"}',
+        encoding="utf-8",
+    )
+    with pytest.raises(CacheCorruptionError, match="missing"):
+        ArtifactCache(tmp_path).load("abc123")
+
+
+def test_malformed_or_unverifiable_metadata_is_a_blocking_corruption(tmp_path: Path) -> None:
+    cache = ArtifactCache(tmp_path)
+    cache.store("abc123", glb=b"first", metadata={})
+    meta = tmp_path / "abc123" / "meta.json"
+    meta.write_text('{"key":"wrong","glb_bytes":5}', encoding="utf-8")
+    with pytest.raises(CacheCorruptionError, match="metadata"):
+        cache.load("abc123")
+
+
+def test_reservation_left_by_a_dead_process_is_reclaimed(tmp_path: Path) -> None:
+    """A killed worker must not block this cache key forever or require a paid retry."""
+    context = multiprocessing.get_context("spawn")
+    ready = context.Event()
+    process = context.Process(target=_hold_cache_reservation, args=(str(tmp_path), ready))
+    process.start()
+    try:
+        assert ready.wait(timeout=10.0)
+        process.terminate()
+        process.join(timeout=5.0)
+        assert not process.is_alive()
+
+        with ArtifactCache(tmp_path).reserve(
+            "shared-key",
+            timeout_seconds=1.0,
+            stale_after_seconds=60.0,
+            poll_interval_seconds=0.01,
+        ):
+            pass
+    finally:
+        if process.is_alive():
+            process.terminate()
+            process.join(timeout=5.0)
+
+
+def test_live_reservation_times_out_without_being_stolen(tmp_path: Path) -> None:
+    cache = ArtifactCache(tmp_path)
+    with cache.reserve("shared-key", timeout_seconds=1.0):
+        started = time.monotonic()
+        with (
+            pytest.raises(CacheReservationTimeoutError),
+            ArtifactCache(tmp_path).reserve(
+                "shared-key",
+                timeout_seconds=0.05,
+                stale_after_seconds=0.0,
+                poll_interval_seconds=0.005,
+            ),
+        ):
+            raise AssertionError("a live owner must not be displaced")
+        assert time.monotonic() - started < 0.5
+
+
+def test_reservation_is_released_when_the_protected_operation_raises(tmp_path: Path) -> None:
+    cache = ArtifactCache(tmp_path)
+    with pytest.raises(RuntimeError, match="fake failure"), cache.reserve(
+        "shared-key", timeout_seconds=1.0
+    ):
+        raise RuntimeError("fake failure")
+
+    with ArtifactCache(tmp_path).reserve("shared-key", timeout_seconds=0.0):
+        pass

@@ -96,6 +96,24 @@ Et la contrainte n°9 de `CLAUDE.md` : **ne jamais regenerer un artefact deja pr
 distant et facture a la seconde. `ArtifactCache.store` refuse d'ecraser par defaut ; il faut
 demander `overwrite=True` explicitement.
 
+## Piloter un Pod deja actif
+
+Le transport de recherche `ssh-pod` n'appelle aucune API de cycle de vie RunPod. Il accepte
+uniquement un hote deja actif, exige une cle d'hote connue et une confirmation a usage unique sur
+un miss de cache :
+
+```powershell
+uv run pixaboost reconstruct single-view image.png --backend ssh-pod `
+  --host <hote> --user <utilisateur> --key <cle-privee> --known-hosts <known-hosts> `
+  --revision <sha-pixal3d> --project-sha <sha-pixaboost> --resolution 1024 --low-vram `
+  --confirm-existing-pod-use
+```
+
+Sans `--confirm-existing-pod-use`, un miss s'arrete avant de construire le client. Un hit reussit
+sans confirmation ni connexion. La GUI applique le meme contrat. Le backend verifie la revision
+distante, les limites et SHA-256 des transferts, le GLB v2, persiste `runs/<id>/` atomiquement et
+borne les connexions, commandes et ecritures PTY.
+
 ## Configurer un Pod RunPod (phase recherche)
 
 **Template**

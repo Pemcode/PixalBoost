@@ -7,13 +7,23 @@ dependencies = [
     "numpy>=2.1",
     "pillow>=12.3.0",
     "scipy>=1.17.1",
+    "trimesh>=5.0.0",
+]
+
+[project.optional-dependencies]
+gui = [
+    "paramiko>=3.5,<5",
+    "PyQt6>=6.6,<7",
 ]
 
 [project.scripts]
 pixaboost = "pixaboost.cli:main"
+pixaboost-gui = "pixaboost.gui.__main__:main"
 
 [dependency-groups]
 dev = [
+    "paramiko>=3.5,<5",
+    "PyQt6>=6.6,<7",
     "pytest>=8.3",
     "pytest-cov>=6.0",
     "ruff>=0.9",

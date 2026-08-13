@@ -79,8 +79,26 @@
       "verification": "RUNPOD_ENDPOINT_ID=<id> uv run pytest tests/e2e/test_smoke_single_view.py -m gpu",
       "state": "blocked",
       "evidence": null,
-      "blocked_on": "Le test vise un endpoint serverless (RUNPOD_ENDPOINT_ID) alors que la phase recherche tourne sur un Pod. Il manque un transport SSH dans backends/ pour piloter un pod depuis les tests.",
-      "note": "La chaine est prouvee MANUELLEMENT le 2026-08-12: un GLB de 37 Mo produit de bout en bout sur RTX 4090 (voir artifacts/smoke-20260812/manifest.json). Mais la commande de verification n'a pas tourne, donc la feature n'est pas 'passing'. Le code est couvert par 40 tests CPU."
+      "blocked_on": "Le transport SSH n'est plus le blocage: F09 le fournit (backends/ssh_pod.py). Ce qui manque est l'execution reelle. tests/e2e/test_smoke_single_view.py vise encore le client serverless (RUNPOD_ENDPOINT_ID) et non le backend ssh-pod effectivement construit; la commande de verification n'a donc jamais tourne contre un Pod facture.",
+      "note": "La chaine est prouvee MANUELLEMENT le 2026-08-12: un GLB de 37 Mo produit de bout en bout sur RTX 4090 (voir artifacts/smoke-20260812/manifest.json). Mais la commande de verification n'a pas tourne, donc la feature n'est pas 'passing'. Prochaine etape concrete: reecrire le test e2e sur SshPodClient, puis l'executer sur un Pod actif. Le code est couvert cote CPU par F09."
+    },
+    {
+      "id": "F08",
+      "sprint": 0,
+      "behavior": "Une petite GUI PyQt6 lance sans bloquer les essais CPU gratuits de PixaBoost, affiche en direct la phase, la progression disponible, la commande sanitisée, le journal, le temps écoulé, le code retour et les artefacts produits, et permet d'arrêter un processus local. Les actions GPU non prises en charge restent désactivées et expliquent leur blocage.",
+      "verification": "uv run pytest -q tests/unit/test_gui_model.py tests/unit/test_gui_remote_adapter.py tests/integration/test_gui.py tests/integration/test_gui_remote.py tests/integration/test_gui_ux.py",
+      "state": "passing",
+      "evidence": "2026-08-13 — commande F08 verte: 73 tests PyQt6/modeles/adaptateur en 6,74 s. Le controleur a aussi execute la vraie commande benchmark par defaut: 58 evenements, succes en 3,97 s, manifeste produit. Gate global vert: ruff, mypy strict et 315 tests en 13,09 s.",
+      "note": "Scope MVP: check CPU, tests CPU, construction du benchmark synthetique, inspection des artefacts locaux et pilotage mono-vue cache-first. Aucun achat ni activation de credits. La commande de verification a ete elargie le 2026-08-13: l'ancienne (test_gui_model + test_gui) ne couvrait pas l'adaptateur distant, la GUI distante ni les tests d'ergonomie livres avec F09. C'est la commande declaree dans docs/gui.md qui fait desormais foi."
+    },
+    {
+      "id": "F09",
+      "sprint": 0,
+      "behavior": "Le backend ssh-pod et le harness d'essai mono-vue appliquent un contrat verifiable sans GPU ni reseau: le cache est resolu localement avant toute connexion, un hit ne construit aucun client SSH, un miss exige une autorisation ephemere a usage unique, un hote inconnu est refuse, la revision distante et le SHA-256 du GLB sont verifies, l'annulation ne declare jamais un arret distant sans acquittement, et chaque tentative ecrit runs/<id>/manifest.json.",
+      "verification": "uv run pytest -q tests/unit/test_ssh_pod.py tests/unit/test_ssh_pod_cancel_latch.py tests/unit/test_ssh_pod_cancel_race.py tests/unit/test_ssh_pod_transport_cancel.py tests/unit/test_single_view_trial.py tests/unit/test_cache.py tests/unit/test_pixal3d_backend.py tests/integration/test_cli_single_view.py",
+      "state": "passing",
+      "evidence": "2026-08-13 — 74 tests verts en 2,93 s. Couvre le refus d'hote inconnu, l'autorisation a usage unique, le latch d'annulation avant construction de session, le rejet d'un GLB structurellement invalide, la detection de corruption du cache par SHA-256 et la reservation interprocessus (un worker tue est reclame, un proprietaire vivant n'est jamais vole).",
+      "note": "Feature ouverte retroactivement le 2026-08-13: environ 2 300 lignes de source (ssh_pod.py, ssh_worker_source.py, trials/, gui/remote_trial.py, gui/single_view_adapter.py) etaient livrees sans aucune entree dans cette liste, donc sans commande de verification. Ne prouve rien sur un Pod reel: tous les tests substituent le transport. La preuve materielle reste F07."
     },
     {
       "id": "F10",
@@ -99,6 +117,7 @@
       "state": "passing",
       "evidence": "commit F11 — 25 tests verts. Umeyama closed-form, ICP tronque avec pre-alignement grossier, score de confiance = inliers x qualite x distinctness, refus par exception sous le seuil. Bague a symetrie d'ordre 12: rmse 1,3e-16 et 100% d'inliers, pourtant refusee (distinctness 0,018).",
       "note": "Deux mesures actees en ADR-0006 et ADR-0007. Le bassin de convergence de l'ICP (~20 deg) dimensionne le nombre de redemarrages et conditionne la strategie d'initialisation de F10."
+    },
     {
       "id": "F12",
       "sprint": 1,

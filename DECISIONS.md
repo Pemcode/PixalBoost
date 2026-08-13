@@ -257,3 +257,111 @@ une reinstallation complete de l'environnement. `uv` installe 3.11 automatiqueme
 pin ne coute rien.
 
 **Reexamen.** Quand `open3d` et `torch` supporteront 3.13 en version stable.
+
+---
+
+## ADR-0011 — La GUI est un harness d'essais, pas un second pipeline
+
+**Date** : 2026-08-13 · **Statut** : accepte · **Origine** : F08
+
+**Decision.** L'interface PyQt6 pilote les commandes CPU reproductibles dans `QProcess` et le
+service mono-vue cache-first dans des workers `QThread`. Elle expose des evenements structures —
+etat, phase, progression disponible, commande sanitisee, journal, duree, code retour et artefacts
+— sans placer Qt dans `core/` ni implementer le protocole SSH dans la fenetre.
+
+**F09** — et non F07 — fournit le transport vers un Pod **deja actif**. Le preflight local est
+execute hors du fil graphique : un hit ne construit aucun client SSH ; un miss exige une
+confirmation humaine explicite, ephemere et a usage unique. PixaBoost ne provisionne, ne demarre,
+n'achete, ne recharge et n'active jamais de Pod ou de credits.
+
+F07 reste `blocked` : il porte la preuve **materielle** (un GLB revenu d'un vrai GPU via la
+commande de verification), que le contrat CPU de F09 ne remplace pas.
+
+**Raison.** Le transport SSH strict verifie la revision du modele, borne et hache les transferts,
+persiste le manifeste et relaie uniquement la telemetrie disponible. Son annulation est prudente :
+aucune nouvelle etape ne part apres la demande, mais l'UI affiche `unknown` tant qu'un arret du
+worker distant n'est pas acquitte. Aucun faux pourcentage ni faux succes d'annulation n'est cree.
+
+**Frontiere.** `gui/` ne decide rien sur la reconstruction. Un controleur de processus traduit
+les sorties de commandes en evenements types ; la fenetre ne fait qu'afficher ces evenements.
+Les preuves experimentales restent dans `runs/<ts>/`. L'inventaire de fichiers locaux est une
+aide de navigation, jamais une seconde source de verite ni une validation scientifique.
+
+**Alternatives rejetees.**
+- *Copier directement la GUI miniDS* : son worker est couple a son client HTTP et sa fenetre
+  melange trop de responsabilites ; PixaBoost n'a pas le meme contrat distant.
+- *Appeler le benchmark dans le fil Qt* : bloque la fenetre et supprime l'observabilite du
+  cycle de vie. `QProcess` fournit une isolation et une annulation locale explicites.
+- *Ajouter du SSH directement dans la fenetre* : viole la frontiere backend ; le runner injecte
+  appelle a la place le service public puis `backends/ssh_pod.py`.
+- *Persister un historique GUI separe* : contredirait `runs/<ts>/`, deja designe comme source de
+  verite des experiences.
+
+**Reexamen.** Avant une mise en production serverless : le transport de recherche actuel cible
+volontairement un Pod existant et ne gere aucun cycle de vie RunPod.
+
+---
+
+## ADR-0012 — `trials/` est la couche d'orchestration, entre `backends/` et les interfaces
+
+**Date** : 2026-08-13 · **Statut** : accepte · **Origine** : F09
+
+**Decision.** Un quatrieme paquet, `src/pixaboost/trials/`, porte l'orchestration d'une tentative
+de reconstruction : resoudre le cache, exiger l'autorisation, appeler l'adaptateur, ecrire
+`runs/<id>/manifest.json`, `metrics.json` et `logs.jsonl`. Il est appele **a la fois** par la CLI
+(`pixaboost reconstruct single-view`) et par la GUI. La carte du depot dans `CLAUDE.md` est
+amendee en consequence.
+
+**Raison.** Cette logique ne pouvait vivre nulle part ailleurs sans casser une contrainte :
+
+| Emplacement | Pourquoi c'est refuse |
+|---|---|
+| `core/` | Ecrit des fichiers, lit une image, depend de `backends/`. Contraintes n°4 et n°5. |
+| `backends/` | La contrainte n°5 y interdit toute logique metier ; l'ordre cache -> autorisation -> inference -> preuve en est. |
+| `gui/` | La CLI en a besoin aussi. Dupliquer, c'est garantir la divergence. |
+
+Le critere de decoupe est donc **la contrainte n°7** : la production du manifeste est ce qui rend
+une experience recevable, et elle doit etre commune a toutes les interfaces.
+
+**Ce que `trials/` n'a pas le droit de faire.** Aucune decision sur la reconstruction elle-meme :
+ni fusion, ni ponderation, ni score de confiance geometrique. Il sequence et il prouve. La
+contrainte n°11 reste entiere.
+
+**Alternatives rejetees.**
+- *Mettre l'orchestration dans `cli.py` et la reappeler depuis la GUI* : la CLI deviendrait une
+  dependance de la GUI, et le manifeste dependrait du parsing d'arguments.
+- *La mettre dans `gui/single_view_adapter.py` seulement* : rend la CLI impossible a tester sans
+  Qt, donc le gate CPU dependrait de PyQt6.
+
+**Reexamen.** Si une troisieme interface apparait, ou au moment de F10 : le multi-vues ajoutera
+une seconde orchestration, et c'est la que se verra si l'abstraction tient.
+
+---
+
+## ADR-0013 — Le cache reserve la cle avant de facturer, et refuse un artefact altere
+
+**Date** : 2026-08-13 · **Statut** : accepte · **Origine** : F09
+
+**Decision.** `ArtifactCache` acquiert une **reservation interprocessus** sur une cle de contenu
+avant de lancer un travail facture, et `load()` **leve** `CacheCorruptionError` au lieu de
+renvoyer `None` quand une entree existe mais ne correspond plus a son SHA-256.
+
+**Raison.** Les deux comportements protegent la meme chose — la contrainte n°9 — contre deux
+defaillances opposees.
+
+1. *Sans reservation*, deux processus qui demandent la meme reconstruction paient deux fois : la
+   verification du cache et l'appel GPU n'etaient pas atomiques. La primitive portable est la
+   creation de repertoire (`mkdir` echoue si le repertoire existe), la seule qui soit atomique a
+   la fois sur NTFS et sur ext4. Un proprietaire vivant n'est jamais vole ; un worker tue est
+   reclame via son PID et son hostname.
+2. *Sans verification d'integrite*, un GLB tronque se lit comme un **hit**. Le pire scenario n'est
+   pas le plantage, c'est la metrique F12 calculee sur un artefact corrompu et archivee comme
+   resultat. Un miss silencieux serait presque aussi grave : il relancerait un travail facture
+   sans jamais signaler que le cache est abime.
+
+**Pourquoi lever plutot que reparer.** Regenerer automatiquement une entree corrompue depense de
+l'argent sur un evenement qui ne devrait pas se produire. L'humain doit voir la corruption.
+
+**Verification.** Prouve par injection, pas par construction : `test_cache.py` altere de vrais
+octets stockes, tue un vrai processus detenteur, et verifie qu'un proprietaire vivant resiste au
+vol.

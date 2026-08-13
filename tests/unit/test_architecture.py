@@ -44,7 +44,12 @@ FORBIDDEN_IMPORTS = {
     "boto3": "network",
 }
 
-FORBIDDEN_INTERNAL = ("pixaboost.backends", "pixaboost.bench")
+FORBIDDEN_INTERNAL = (
+    "pixaboost.backends",
+    "pixaboost.bench",
+    "pixaboost.gui",
+    "pixaboost.observability",
+)
 
 #: `np.random.default_rng(seed)` is fine; the legacy global-state helpers are not.
 FORBIDDEN_RANDOM_ATTRS = {"seed", "rand", "randn", "random", "randint", "choice", "shuffle"}
@@ -155,8 +160,16 @@ def test_forbidden_import_detector_catches_violations(source: str) -> None:
     assert imported_roots(ast.parse(source)) & set(FORBIDDEN_IMPORTS)
 
 
-def test_layering_detector_catches_a_backend_import() -> None:
-    tree = ast.parse("from pixaboost.backends.pixal3d import run")
+@pytest.mark.parametrize(
+    "source",
+    [
+        "from pixaboost.backends.pixal3d import run",
+        "from pixaboost.gui.main_window import MainWindow",
+        "from pixaboost.observability import TelemetryEvent",
+    ],
+)
+def test_layering_detector_catches_an_outer_layer_import(source: str) -> None:
+    tree = ast.parse(source)
     assert {m for m in imported_modules(tree) if m.startswith(FORBIDDEN_INTERNAL)}
 
 

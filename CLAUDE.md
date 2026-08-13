@@ -61,6 +61,8 @@ qui fait foi**, pas ton jugement.
 src/pixaboost/core/       CPU pur, deterministe, 100 % TDD    -> lis core/ARCHITECTURE.md
 src/pixaboost/backends/   Adaptateurs GPU / reseau, fins       -> lis backends/CONSTRAINTS.md
 src/pixaboost/bench/      Rendu synthetique + runner d'eval
+src/pixaboost/trials/     Orchestration d'un essai + production du manifeste -> ADR-0012
+src/pixaboost/gui/        Harness PyQt6 d'essais CPU observables
 tests/unit/               CPU, < 60 s, sans reseau ni GPU
 tests/e2e/                GPU reel, marques @pytest.mark.gpu
 artifacts/                Cache d'artefacts GPU (jamais commite)
@@ -77,6 +79,7 @@ vendor/pixal3d/           Submodule Pixal3D, lecture seule
 | `docs/pixal3d-internals.md` | Avant de toucher a `backends/pixal3d.py`. |
 | `docs/benchmark.md` | Avant de toucher a `bench/` ou aux metriques. |
 | `docs/gpu-runtime.md` | Avant de lancer quoi que ce soit sur RunPod ou de toucher a `docker/`. |
+| `docs/gui.md` | Architecture, commandes et exclusions de la GUI d'essais. |
 | `DECISIONS.md` | Avant de remettre en cause un choix : la raison y est deja. |
 
 ---

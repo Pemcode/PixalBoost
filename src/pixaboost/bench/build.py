@@ -15,6 +15,7 @@ from __future__ import annotations
 import argparse
 import json
 import subprocess
+from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -27,6 +28,7 @@ from pixaboost.bench.rig import capture_rig
 from pixaboost.bench.shapes import CATALOGUE, FloatArray, IntArray
 from pixaboost.core.geometry import BlenderCamera, Sim3
 from pixaboost.core.render import rasterise_face_index
+from pixaboost.observability import TelemetryEvent, encode_event
 
 #: Pixal3D's own default conditioning FOV (pipelines/pixal3d_image_to_3d.py:196).
 DEFAULT_CAMERA_ANGLE_X = 0.857556
@@ -99,7 +101,12 @@ def shade(
     return (rgb * 255.0 + 0.5).astype(np.uint8), mask
 
 
-def build_dataset(output_root: Path, config: BuildConfig | None = None) -> Path:
+def build_dataset(
+    output_root: Path,
+    config: BuildConfig | None = None,
+    *,
+    on_event: Callable[[TelemetryEvent], None] | None = None,
+) -> Path:
     """Write the whole benchmark under `output_root` and return it."""
     config = config or BuildConfig()
     parts = config.selected_parts()  # validated before anything is written
@@ -108,6 +115,18 @@ def build_dataset(output_root: Path, config: BuildConfig | None = None) -> Path:
 
     output_root = Path(output_root)
     output_root.mkdir(parents=True, exist_ok=True)
+    total_views = len(parts) * len(rig)
+    completed_views = 0
+
+    if on_event is not None:
+        on_event(
+            TelemetryEvent(
+                phase="benchmark",
+                stage="preparation",
+                progress=0.0,
+                message=f"{len(parts)} pieces x {len(rig)} vues",
+            )
+        )
 
     for name in parts:
         vertices, faces = CATALOGUE[name]()
@@ -132,6 +151,16 @@ def build_dataset(output_root: Path, config: BuildConfig | None = None) -> Path:
                     "camera_to_world": view.camera_to_world.as_matrix().tolist(),
                 }
             )
+            completed_views += 1
+            if on_event is not None:
+                on_event(
+                    TelemetryEvent(
+                        phase="benchmark",
+                        stage="rendu",
+                        progress=completed_views / total_views,
+                        message=f"{name} — {view.name}",
+                    )
+                )
 
         (part_dir / "cameras.json").write_text(
             json.dumps(
@@ -150,7 +179,8 @@ def build_dataset(output_root: Path, config: BuildConfig | None = None) -> Path:
             encoding="utf-8",
         )
 
-    (output_root / "manifest.json").write_text(
+    manifest_path = output_root / "manifest.json"
+    manifest_path.write_text(
         json.dumps(
             {
                 "git_sha": _git_sha(),
@@ -164,6 +194,16 @@ def build_dataset(output_root: Path, config: BuildConfig | None = None) -> Path:
         ),
         encoding="utf-8",
     )
+    if on_event is not None:
+        on_event(
+            TelemetryEvent(
+                phase="benchmark",
+                stage="manifeste",
+                progress=1.0,
+                message="benchmark termine",
+                artifact=manifest_path,
+            )
+        )
     return output_root
 
 
@@ -172,7 +212,16 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--output", type=Path, default=Path("data/bench"))
     parser.add_argument("--resolution", type=int, default=BuildConfig.resolution)
     parser.add_argument("--part", action="append", dest="parts", choices=sorted(CATALOGUE))
+    parser.add_argument(
+        "--events-jsonl",
+        action="store_true",
+        help="emit prefixed JSONL telemetry records for an external harness",
+    )
     args = parser.parse_args(argv)
+
+    event_sink = (
+        (lambda event: print(encode_event(event), flush=True)) if args.events_jsonl else None
+    )
 
     root = build_dataset(
         args.output,
@@ -180,6 +229,7 @@ def main(argv: list[str] | None = None) -> int:
             resolution=args.resolution,
             parts=tuple(args.parts) if args.parts else None,
         ),
+        on_event=event_sink,
     )
     print(f"benchmark written to {root.resolve()}")
     return 0

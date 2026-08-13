@@ -23,6 +23,7 @@ from pixaboost.bench.build import BuildConfig, build_dataset
 from pixaboost.bench.rig import AZIMUTH_COUNT, ELEVATIONS_DEG
 from pixaboost.core.geometry import BlenderCamera, Sim3
 from pixaboost.core.render import rasterise_silhouette
+from pixaboost.observability import TelemetryEvent
 
 VIEW_COUNT = AZIMUTH_COUNT * len(ELEVATIONS_DEG)
 
@@ -121,3 +122,22 @@ def test_an_unknown_part_is_rejected_before_anything_is_written(tmp_path: Path) 
     with pytest.raises(ValueError, match="unknown part"):
         build_dataset(tmp_path, BuildConfig(parts=("not_a_part",)))
     assert not list(tmp_path.iterdir())
+
+
+def test_the_builder_emits_countable_progress_and_the_manifest_artifact(tmp_path: Path) -> None:
+    events: list[TelemetryEvent] = []
+
+    build_dataset(
+        tmp_path,
+        BuildConfig(resolution=16, parts=("l_bracket",)),
+        on_event=events.append,
+    )
+
+    render_events = [event for event in events if event.stage == "rendu"]
+    assert len(render_events) == VIEW_COUNT
+    assert events[0].progress == 0.0
+    assert [event.progress for event in render_events] == sorted(
+        event.progress for event in render_events if event.progress is not None
+    )
+    assert events[-1].progress == 1.0
+    assert events[-1].artifact == tmp_path / "manifest.json"
