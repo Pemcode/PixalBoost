@@ -11,6 +11,7 @@ ends up in `runs/<id>/logs.jsonl`.
 
 from __future__ import annotations
 
+import os
 import sys
 import types
 from pathlib import Path
@@ -230,3 +231,60 @@ def test_a_negative_prompt_is_expressible() -> None:
     """Excluding the clamp is a negative click, which is the whole point of SAM here."""
     assert PointPrompt(10, 20, positive=False).positive is False
     assert PointPrompt(10, 20).positive is True
+
+
+def test_the_token_reaches_ambient_hub_calls_and_is_removed_afterwards(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Passing token= only covers the calls we make ourselves.
+
+    transformers resolves configs and companion files through helpers that do
+    not always forward it, which produced an intermittent 401 on the gated repo
+    while an explicit request for the same file returned 200.
+    """
+    for name in TOKEN_ENV_VARS:
+        monkeypatch.delenv(name, raising=False)
+    token_file = tmp_path / "huggingface.env"
+    token_file.write_text(FAKE_TOKEN, encoding="utf-8")
+    seen: list[dict[str, str | None]] = []
+
+    class Recording:
+        @staticmethod
+        def from_pretrained(*args: object, **kwargs: object) -> object:
+            seen.append({name: os.environ.get(name) for name in TOKEN_ENV_VARS})
+            return types.SimpleNamespace(
+                to=lambda _device: types.SimpleNamespace(eval=lambda: None),
+                eval=lambda: None,
+            )
+
+    _install_fake_runtime(monkeypatch, from_pretrained=Recording)
+    Sam3TrackerRunner(token_file=token_file, device="cpu").load()
+
+    assert seen, "from_pretrained was never reached"
+    for snapshot in seen:
+        assert all(value == FAKE_TOKEN for value in snapshot.values()), (
+            f"ambient credentials were not set during the load: {snapshot}"
+        )
+    for name in TOKEN_ENV_VARS:
+        assert os.environ.get(name) is None, "the token must not outlive the load"
+
+
+def test_the_environment_is_restored_even_when_loading_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    for name in TOKEN_ENV_VARS:
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("HF_TOKEN", "hf_preexisting_value")
+    token_file = tmp_path / "huggingface.env"
+    token_file.write_text(FAKE_TOKEN, encoding="utf-8")
+
+    class Exploding:
+        @staticmethod
+        def from_pretrained(*args: object, **kwargs: object) -> None:
+            raise RuntimeError("boom")
+
+    _install_fake_runtime(monkeypatch, from_pretrained=Exploding)
+    with pytest.raises(Sam3Error):
+        Sam3TrackerRunner(token_file=token_file, device="cpu").load()
+
+    assert os.environ["HF_TOKEN"] == "hf_preexisting_value", "a pre-existing value was clobbered"

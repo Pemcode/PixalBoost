@@ -26,6 +26,8 @@ from __future__ import annotations
 
 import os
 import re
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Protocol
@@ -63,6 +65,32 @@ def redact_token(text: str, token: str | None = None) -> str:
     if token:
         cleaned = cleaned.replace(token, "<redacted>")
     return cleaned
+
+
+@contextmanager
+def _hub_token_in_environment(token: str) -> Iterator[None]:
+    """Expose the token to every Hub call for the duration of a load.
+
+    Passing `token=` to `from_pretrained` only covers the calls we make
+    ourselves. `transformers` resolves configs, remote code and companion files
+    through its own internal helpers, and those that do not forward the
+    argument fall back to the ambient credentials -- which produced an
+    intermittent 401 on this gated repo while an explicit request for the very
+    same file returned 200.
+
+    Restored on exit, including on failure, so the token does not leak into
+    later subprocesses.
+    """
+    previous = {name: os.environ.get(name) for name in TOKEN_ENV_VARS}
+    os.environ.update(dict.fromkeys(TOKEN_ENV_VARS, token))
+    try:
+        yield
+    finally:
+        for name, value in previous.items():
+            if value is None:
+                os.environ.pop(name, None)
+            else:
+                os.environ[name] = value
 
 
 @dataclass(frozen=True)
@@ -204,10 +232,13 @@ class Sam3TrackerRunner:
         device = self.device or ("cuda" if torch.cuda.is_available() else "cpu")
         dtype = torch.float16 if (self.half_precision and device.startswith("cuda")) else None
         try:
-            self._processor = Sam3TrackerProcessor.from_pretrained(self.checkpoint, token=token)
-            self._model = Sam3TrackerModel.from_pretrained(
-                self.checkpoint, token=token, dtype=dtype
-            ).to(device)
+            with _hub_token_in_environment(token):
+                self._processor = Sam3TrackerProcessor.from_pretrained(
+                    self.checkpoint, token=token
+                )
+                self._model = Sam3TrackerModel.from_pretrained(
+                    self.checkpoint, token=token, dtype=dtype
+                ).to(device)
         except Exception as error:
             # Redact the token, keep the text. An earlier version dropped the
             # message entirely and reported only the exception class, which
