@@ -204,17 +204,20 @@ Le correctif natten (`ee4a058`) est un ancetre de `b9655e4` : **il est sur GitHu
 decrit ici a ete resolu sans que la note soit mise a jour, et deux sessions ont pu partir d'un
 diagnostic perime.
 
-**Reste a verifier** (impossible en local, `gh` n'est pas installe) : l'image publiee porte-t-elle
-le correctif ? La preuve de F06 cite encore le tag `gpu-5ff20035…`, construit **avant**
-`ee4a058`. Tant que ce n'est pas confirme, considerer que `bash /workspace/setup_pod.sh` reste
-necessaire sur un nouveau pod.
+**Confirme le 2026-08-13** : l'image publiee **porte le correctif**. Les tags GHCR incluent
+`gpu-b9655e4cbb5cec0e9388f0fd1b56d82186ba4646`, et `gpu-latest` a **le meme digest**
+(`sha256:bc094b3f4cf4…`). Or `ee4a058` est un ancetre de `b9655e4`. L'ancienne image cassee
+etait `gpu-5ff20035…` (digest `sha256:6bbf9f0ad1c5…`), differente.
+
+Consequence : **`bash /workspace/setup_pod.sh` ne devrait plus etre necessaire** sur un pod
+demarre depuis `gpu-latest`. A confirmer une fois sur le pod, mais l'indice est fort.
 
 ## Correctifs encore manuels dans le pod
 
 Ils vivent sur le volume reseau et survivent aux redemarrages :
 
-- `/workspace/setup_pod.sh` — reinstalle le natten officiel (ADR-0009). Devrait etre inutile
-  depuis `ee4a058`, **a confirmer** sur le tag publie le plus recent.
+- `/workspace/setup_pod.sh` — reinstalle le natten officiel (ADR-0009). **Devenu inutile** :
+  `gpu-latest` est construit sur `b9655e4`, qui contient le correctif. Verifie par digest GHCR.
 - `/workspace/run_mit.py` — force BiRefNet MIT au lieu de RMBG-2.0 gated (ADR-0010). Doit etre
   porte proprement dans `backends/`.
 
@@ -238,7 +241,7 @@ grandeur pour un usage catalogue ? La reponse oriente tout le reste — si le mo
 suffisant sur des objets simples, le gate F13 se rapproche.
 
 Ensuite, dans l'ordre de valeur :
-1. Confirmer que l'image publiee porte le correctif natten (`ee4a058`) — le push, lui, est passe.
+1. ~~Confirmer que l'image publiee porte le correctif natten~~ — **fait**, digest GHCR verifie.
 2. Reecrire `tests/e2e/test_smoke_single_view.py` sur `SshPodClient` et l'executer : c'est la
    seule chose qui debloque F07.
 3. Porter le patch BiRefNet dans `backends/` plutot que dans un script sur le volume.
