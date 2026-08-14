@@ -366,13 +366,23 @@ def _pid_is_alive(pid: int) -> bool:
 
 
 def _windows_pid_is_alive(pid: int) -> bool:
-    """Query a process handle without using ``os.kill(pid, 0)`` on Windows."""
+    """Query a process handle without using ``os.kill(pid, 0)`` on Windows.
+
+    `ctypes.WinDLL` and `ctypes.get_last_error` only exist on Windows, so they
+    are reached through `getattr`: a direct attribute access type-checks here
+    and fails on the Linux CI runner, which is precisely the kind of
+    platform-dependent gate the project cannot afford. `poe typecheck` now runs
+    both platforms for the same reason.
+    """
     import ctypes
     from ctypes import wintypes
 
     process_query_limited_information = 0x1000
     still_active = 259
-    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    load_library = getattr(ctypes, "WinDLL", None)
+    if load_library is None:  # pragma: no cover - unreachable on Windows
+        raise RuntimeError("_windows_pid_is_alive called off Windows")
+    kernel32 = load_library("kernel32", use_last_error=True)
     kernel32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
     kernel32.OpenProcess.restype = wintypes.HANDLE
     kernel32.GetExitCodeProcess.argtypes = [wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD)]
@@ -382,11 +392,16 @@ def _windows_pid_is_alive(pid: int) -> bool:
 
     handle = kernel32.OpenProcess(process_query_limited_information, False, pid)
     if not handle:
-        return ctypes.get_last_error() == 5  # Access denied still means the process exists.
+        # Access denied (5) still means the process exists. The indirection is
+        # deliberate and ruff's B009 is wrong here: `ctypes.get_last_error`
+        # exists only on Windows in typeshed, so a direct access type-checks on
+        # this machine and fails the Linux CI run.
+        last_error = getattr(ctypes, "get_last_error")  # noqa: B009
+        return bool(last_error() == 5)
     try:
         exit_code = wintypes.DWORD()
         if not kernel32.GetExitCodeProcess(handle, ctypes.byref(exit_code)):
             return True
-        return exit_code.value == still_active
+        return bool(exit_code.value == still_active)
     finally:
         kernel32.CloseHandle(handle)

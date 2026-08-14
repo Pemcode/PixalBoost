@@ -57,7 +57,14 @@ packages = ["src/pixaboost"]
 setup = { cmd = "uv sync --all-groups", help = "Install the CPU dev environment from scratch" }
 lint = { cmd = "ruff check src tests", help = "Lint" }
 fmt = { cmd = "ruff format src tests", help = "Format" }
-typecheck = { cmd = "mypy src", help = "Static type check" }
+typecheck = { sequence = [
+    "typecheck-host",
+    "typecheck-linux",
+], help = "Static type check on both platforms", ignore_fail = false }
+typecheck-host = { cmd = "mypy src", help = "Static type check for this machine" }
+# CI runs on Linux. A gate that is green here and red there is not a gate:
+# ctypes.WinDLL type-checked on Windows and broke the pipeline on push.
+typecheck-linux = { cmd = "mypy src --platform linux", help = "Static type check as CI sees it" }
 test = { cmd = "pytest tests/unit tests/integration -q", help = "CPU tests (no GPU, no network)" }
 check = { sequence = [
     "lint",
