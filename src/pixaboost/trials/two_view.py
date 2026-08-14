@@ -32,6 +32,7 @@ from pixaboost.backends.glb import load_mesh, write_placed_meshes
 from pixaboost.core.geometry import BlenderCamera, front_view_camera
 from pixaboost.core.metrics import silhouette_iou
 from pixaboost.core.pose_search import (
+    OPPOSITE_FACES,
     crop_to_canonical_framing,
     search_object_pose,
 )
@@ -66,6 +67,13 @@ class TwoViewConfig:
     azimuth_steps: int = 24
     elevation_steps: int = 7
     refine_rounds: int = 3
+    #: The photographer's own statement that the second view is the other face.
+    #: On a revolved part the two outlines are identical, so no silhouette can
+    #: establish this and the search would return the identity. Set it False
+    #: only when the second view is genuinely a different angle, not a flip.
+    opposite_faces: bool = True
+    #: How far the search may stray from that assertion.
+    max_deviation: float = float(np.deg2rad(70.0))
 
 
 @dataclass(frozen=True)
@@ -116,6 +124,8 @@ def run_two_view_trial(
         azimuth_steps=config.azimuth_steps,
         elevation_steps=config.elevation_steps,
         refine_rounds=config.refine_rounds,
+        prior_rotation=OPPOSITE_FACES if config.opposite_faces else None,
+        max_deviation=config.max_deviation if config.opposite_faces else None,
     )
 
     # `search.rotation` carries the front frame *into* the back frame, so the
@@ -208,6 +218,8 @@ def _write_manifest(run_dir: Path, **fields: Any) -> Path:
             "azimuth_steps": config.azimuth_steps,
             "elevation_steps": config.elevation_steps,
             "refine_rounds": config.refine_rounds,
+            "prior": "opposite-faces" if config.opposite_faces else "none",
+            "max_deviation_rad": config.max_deviation if config.opposite_faces else None,
             "front_to_back_rotation": np.asarray(fields["rotation"]).tolist(),
         },
         "metrics": {

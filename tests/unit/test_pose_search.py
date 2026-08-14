@@ -22,6 +22,7 @@ from pixaboost.bench.shapes import flange_ring, l_bracket, stepped_shaft
 from pixaboost.core.geometry import BlenderCamera, front_view_camera
 from pixaboost.core.metrics import silhouette_iou
 from pixaboost.core.pose_search import (
+    OPPOSITE_FACES,
     PoseSearchResult,
     crop_to_canonical_framing,
     object_rotation,
@@ -302,3 +303,94 @@ def test_a_blob_touching_the_border_is_still_centred() -> None:
 def test_an_empty_mask_cannot_be_cropped() -> None:
     with pytest.raises(ValueError, match="empty"):
         crop_to_canonical_framing(np.zeros((10, 10), dtype=bool), resolution=16)
+
+
+# --------------------------------------------------------------------------
+# the prior: one bit the photographer always has and the silhouette never does
+# --------------------------------------------------------------------------
+
+
+def test_without_a_prior_two_opposite_faces_of_a_disc_are_indistinguishable() -> None:
+    """The measured degeneracy, stated before it is fixed.
+
+    A revolved part seen front and back has the *same* outline, so the search
+    scores a 180 degree flip no better than the identity. It reports the tie
+    honestly -- and that is all it can do from silhouettes alone.
+    """
+    mesh = flange_ring()
+    flipped = object_rotation(np.pi, 0.0, 0.0)
+    target = render_at(mesh, flipped)
+
+    result = search(mesh, target)
+
+    assert result.is_ambiguous
+    identity_scores_as_well = silhouette_iou(
+        crop_to_canonical_framing(render_at(mesh, np.eye(3)), CAMERA.resolution),
+        crop_to_canonical_framing(target, CAMERA.resolution),
+    )
+    assert identity_scores_as_well > result.iou - 0.05, (
+        "if the identity ever stops matching, this fixture is no longer degenerate"
+    )
+
+
+def test_a_prior_confines_the_search_to_orientations_near_it() -> None:
+    mesh = l_bracket()
+    prior = object_rotation(np.pi, 0.0, 0.0)
+
+    result = search(
+        mesh,
+        render_at(mesh, object_rotation(np.deg2rad(170.0), 0.0, 0.0)),
+        prior_rotation=prior,
+        max_deviation=np.deg2rad(45.0),
+    )
+
+    assert rotation_angle_between(result.rotation, prior) <= np.deg2rad(45.0) + 1e-9
+    assert all(
+        rotation_angle_between(c.rotation, prior) <= np.deg2rad(45.0) + 1e-9
+        for c in result.candidates
+    )
+
+
+def test_the_prior_makes_the_flip_recoverable_on_a_symmetric_part() -> None:
+    """The point of the whole thing: the photographer knows it is the back."""
+    mesh = flange_ring()
+    flipped = object_rotation(np.pi, 0.0, 0.0)
+
+    result = search(
+        mesh,
+        render_at(mesh, flipped),
+        prior_rotation=flipped,
+        max_deviation=np.deg2rad(60.0),
+    )
+
+    assert result.iou > 0.90
+    assert rotation_angle_between(result.rotation, np.eye(3)) > np.deg2rad(90.0), (
+        "the answer must be a flip, not the identity the silhouette also allows"
+    )
+
+
+def test_a_prior_that_excludes_every_grid_orientation_is_refused() -> None:
+    """Silence here would mean searching an empty set and returning nothing.
+
+    The prior sits at 15 degrees, deliberately between two grid points of the
+    30-degree sweep, with a bound too tight to reach either.
+    """
+    mesh = l_bracket()
+    with pytest.raises(ValueError, match="prior"):
+        search(
+            mesh,
+            render_at(mesh, np.eye(3)),
+            prior_rotation=object_rotation(np.deg2rad(15.0), 0.0, 0.0),
+            max_deviation=np.deg2rad(0.5),
+        )
+
+
+def test_a_prior_without_a_deviation_is_refused_rather_than_silently_ignored() -> None:
+    mesh = l_bracket()
+    with pytest.raises(ValueError, match="max_deviation"):
+        search(mesh, render_at(mesh, np.eye(3)), prior_rotation=np.eye(3))
+
+
+def test_opposite_faces_is_a_half_turn_about_the_vertical_axis() -> None:
+    """The named relation the GUI offers, pinned so it cannot drift."""
+    assert np.allclose(OPPOSITE_FACES, object_rotation(np.pi, 0.0, 0.0), atol=1e-12)

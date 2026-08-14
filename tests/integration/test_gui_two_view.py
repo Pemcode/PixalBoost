@@ -256,3 +256,32 @@ def test_the_window_exposes_the_tab(app: QApplication, tmp_path: Path) -> None:
         assert window.two_view_panel.result is None
     finally:
         window.close()
+
+
+def test_the_opposite_faces_prior_is_on_by_default_and_reaches_the_config(
+    app: QApplication, tmp_path: Path
+) -> None:
+    """Front and back of a revolved part have the same outline.
+
+    Without the prior the search returns the identity and the two halves land
+    on top of each other instead of completing one another.
+    """
+    seen: list[TwoViewConfig] = []
+    front, back = photos(tmp_path)
+    panel = TwoViewPanel(
+        runs_root=tmp_path / "runs",
+        runner=lambda c: (seen.append(c), result_for(c, pose=0.9, agreement=0.8))[1],
+    )
+    assert panel.opposite_check.isChecked(), "the labelled case is the default"
+    panel.front_edit.setText(str(front))
+    panel.back_edit.setText(str(back))
+    panel._refresh()
+
+    panel.run_button.click()
+    settle(app, panel)
+    assert seen[-1].opposite_faces is True
+
+    panel.opposite_check.setChecked(False)
+    panel.run_button.click()
+    settle(app, panel)
+    assert seen[-1].opposite_faces is False, "unchecking must actually reach the trial"

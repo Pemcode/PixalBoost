@@ -197,11 +197,15 @@ def test_a_bar_shaped_mask_does_NOT_collapse_the_score_and_that_is_a_real_limit(
 ) -> None:
     """Measured limitation, pinned so nobody rediscovers it on real photographs.
 
-    An L-bracket seen edge-on *is* a bar, so a bar-shaped mask scores above
-    0.9. Silhouette matching cannot distinguish a genuine match from a
-    degenerate view that happens to agree. `pose_iou` alone must therefore
-    never be read as proof; that is what `agreement_iou` and looking at the
-    GLB are for.
+    An L-bracket seen edge-on *is* a bar, so a bar-shaped mask still scores
+    high. Silhouette matching cannot distinguish a genuine match from a
+    degenerate view that happens to agree.
+
+    The `opposite_faces` prior narrowed this -- 0.94 without it, 0.83 with --
+    by putting most of the coincidental orientations out of reach. It did not
+    remove it: `is_trustworthy` is still True here, on a mask that has nothing
+    to do with the part. `pose_iou` must therefore never be read as proof.
+    That is what `agreement_iou` and looking at the GLB are for.
     """
     mesh = l_bracket()
     config, reconstruct, _ = build(tmp_path, mesh, object_rotation(np.pi, 0.0, 0.0))
@@ -213,7 +217,10 @@ def test_a_bar_shaped_mask_does_NOT_collapse_the_score_and_that_is_a_real_limit(
 
     result = run_two_view_trial(config, reconstruct=reconstruct, mask_of=bar_mask)
 
-    assert result.pose_iou > 0.85, "if this ever drops, the limitation was fixed -- update the doc"
+    assert result.pose_iou > 0.75, "if this ever drops, the limitation shrank -- update the doc"
+    assert result.is_trustworthy, (
+        "the honest, uncomfortable part: the guard does NOT catch this one"
+    )
 
 
 def test_the_photo_mask_goes_through_the_canonical_framing(tmp_path: Path) -> None:

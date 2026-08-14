@@ -77,6 +77,27 @@ pour que personne ne la redecouvre sur de vraies photos.
 En revanche un masque **topologiquement impossible** — un anneau contre un solide sans trou —
 fait bien s'effondrer le score.
 
+## Le prior « faces opposees » — le bit que la silhouette ne porte pas
+
+**Mesure sur `piece_test/front_back`** : les deux vues de la roue ont la **meme silhouette**, un
+cercle. La geometrie interne differe nettement — moyeu saillant d'un cote, cuvette de l'autre —
+mais le *contour* est identique. Aucune recherche par silhouette ne peut donc distinguer l'avant
+de l'arriere ; elle renvoie l'identite, et les deux moities se superposent au lieu de se completer.
+
+Or **le photographe sait** que la seconde vue est le dos. C'est un bit d'information qu'il possede
+toujours gratuitement et que l'image ne contient pas. `OPPOSITE_FACES` le fait entrer comme
+contrainte : la recherche est confinee a +/- 70 deg d'un demi-tour, ce qui **affirme** le
+retournement au lieu de le deviner, et laisse la silhouette determiner l'inclinaison — la seule
+chose qu'elle sache vraiment determiner.
+
+La case est **cochee par defaut** dans la GUI, parce que c'est le cas etiquete. Decoche-la si la
+seconde vue est un autre angle plutot qu'un retournement.
+
+**Ce que le prior ne repare pas.** Il *reduit* la degenerescence sans la supprimer : sur le cas
+du L-bracket vu de chant, le score tombe de 0,94 a 0,83 — et `is_trustworthy` reste vrai sur un
+masque qui n'a rien a voir avec la piece. Un test l'exige explicitement, pour que ce ne soit pas
+oublie.
+
 ## Utilisation
 
 Onglet **Reconstruction 2 vues** de `uv run pixaboost-gui` : deux champs, deux `Parcourir…`, un

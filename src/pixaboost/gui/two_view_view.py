@@ -16,6 +16,7 @@ from pathlib import Path
 
 from PyQt6.QtCore import QObject, QThread, pyqtSignal
 from PyQt6.QtWidgets import (
+    QCheckBox,
     QFileDialog,
     QGridLayout,
     QLabel,
@@ -104,6 +105,16 @@ class TwoViewPanel(QWidget):
             grid.addWidget(button, row, 2)
         layout.addLayout(grid)
 
+        self.opposite_check = QCheckBox("Les deux vues sont les faces OPPOSÉES de la pièce")
+        self.opposite_check.setChecked(True)
+        self.opposite_check.setToolTip(
+            "Sur une pièce de révolution, l'avant et l'arrière ont la MÊME silhouette : "
+            "aucun contour ne peut les distinguer et la recherche renverrait l'identité. "
+            "Cochée, cette case affirme le demi-tour au lieu de le deviner. "
+            "Décoche-la si la seconde vue est un autre angle, pas un retournement."
+        )
+        layout.addWidget(self.opposite_check)
+
         self.run_button = QPushButton("Reconstruire depuis 2 vues")
         self.run_button.setToolTip(
             "Reconstruit chaque photo (cache d'abord), déduit la pose relative "
@@ -136,7 +147,10 @@ class TwoViewPanel(QWidget):
         if not front or not back:
             return None
         return TwoViewConfig(
-            front_image=Path(front), back_image=Path(back), runs_root=self._runs_root
+            front_image=Path(front),
+            back_image=Path(back),
+            runs_root=self._runs_root,
+            opposite_faces=self.opposite_check.isChecked(),
         )
 
     # -- actions -----------------------------------------------------------

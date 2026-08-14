@@ -99,6 +99,23 @@ def _resize_nearest_bool(mask: BoolArray, resolution: int) -> BoolArray:
     return resized
 
 
+def _half_turn() -> FloatArray:
+    turn: FloatArray = np.array(
+        [[-1.0, 0.0, 0.0], [0.0, -1.0, 0.0], [0.0, 0.0, 1.0]], dtype=np.float64
+    )
+    return turn
+
+
+#: The relation a photographer always knows and a silhouette never contains.
+#:
+#: Two opposite faces of a revolved part have the *same* outline, so the search
+#: scores a half turn no better than the identity and correctly reports a tie.
+#: Measured on `piece_test/front_back`: both views of the wheel are the same
+#: circle. Supplying this as a prior asserts the flip instead of guessing it,
+#: leaving the silhouette to determine the tilt it actually can determine.
+OPPOSITE_FACES = _half_turn()
+
+
 def object_rotation(azimuth: float, elevation: float, roll: float) -> FloatArray:
     """Rotation applied to the *object*, the camera staying canonical.
 
@@ -196,13 +213,23 @@ def search_object_pose(
     elevation_steps: int = 7,
     roll_steps: int = 1,
     refine_rounds: int = 2,
+    prior_rotation: FloatArray | None = None,
+    max_deviation: float | None = None,
 ) -> PoseSearchResult:
     """Find the object rotation whose silhouette best matches `target`.
 
     A coarse sweep first, then `refine_rounds` local passes that halve the
     spacing around the leader. Deterministic: no random restarts, and ties are
     broken by the order the grid is generated in.
+
+    `prior_rotation` confines the search to orientations within
+    `max_deviation` radians of it. This is how a caller injects what the
+    silhouette cannot carry -- typically `OPPOSITE_FACES`, because the person
+    who took the photographs knows the second one is the back and no outline
+    of a revolved part will ever reveal it.
     """
+    if prior_rotation is not None and max_deviation is None:
+        raise ValueError("a prior_rotation requires a max_deviation to bound it")
     mask = crop_to_canonical_framing(_validate(target), camera.resolution)
     camera_to_world = front_view_camera(distance)
     points = np.asarray(vertices, dtype=np.float64)
@@ -220,9 +247,22 @@ def search_object_pose(
         )
         return PoseCandidate(rotation=rotation, iou=silhouette_iou(framed, mask))
 
-    evaluated: list[tuple[FloatArray, PoseCandidate]] = [
-        (angles, score(angles)) for angles in _grid(azimuth_steps, elevation_steps, roll_steps)
+    def allowed(angles: FloatArray) -> bool:
+        if prior_rotation is None or max_deviation is None:
+            return True
+        return rotation_angle_between(object_rotation(*angles), prior_rotation) <= max_deviation
+
+    grid = [
+        angles
+        for angles in _grid(azimuth_steps, elevation_steps, roll_steps)
+        if allowed(angles)
     ]
+    if not grid:
+        raise ValueError(
+            "the prior excludes every grid orientation; widen max_deviation "
+            "or increase the number of steps"
+        )
+    evaluated: list[tuple[FloatArray, PoseCandidate]] = [(angles, score(angles)) for angles in grid]
     best_angles = max(evaluated, key=lambda item: item[1].iou)[0]
 
     spacing = np.array(
@@ -238,7 +278,7 @@ def search_object_pose(
             best_angles + spacing * np.array(offset)
             for offset in ((-1, 0, 0), (1, 0, 0), (0, -1, 0), (0, 1, 0), (0, 0, -1), (0, 0, 1))
         ]
-        evaluated.extend((angles, score(angles)) for angles in neighbours)
+        evaluated.extend((angles, score(angles)) for angles in neighbours if allowed(angles))
         best_angles = max(evaluated, key=lambda item: item[1].iou)[0]
 
     ordered = sorted((candidate for _, candidate in evaluated), key=lambda c: -c.iou)
