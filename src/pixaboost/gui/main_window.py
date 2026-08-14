@@ -5,6 +5,7 @@ from __future__ import annotations
 import time
 from collections import deque
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from PyQt6.QtCore import Qt, QTimer, pyqtSlot
 from PyQt6.QtGui import QCloseEvent, QFont
@@ -53,6 +54,9 @@ from pixaboost.gui.remote_trial import (
 from pixaboost.gui.runner import CommandController
 from pixaboost.observability import EVENT_PREFIX, TelemetryEvent
 
+if TYPE_CHECKING:  # imported lazily at runtime so opening the window stays cheap
+    from pixaboost.gui.two_view_view import TwoViewEngine
+
 _UI_STATE_LABELS = {
     RunState.IDLE: "Prêt",
     RunState.STARTING: "Démarrage",
@@ -89,6 +93,7 @@ class MainWindow(QMainWindow):
         self._remote_cancel_acknowledged = False
         self._remote_cancel_state: CancelState | None = None
         self._remote_close_after_cancel = False
+        self._two_view_close_after_cancel = False
         self._pending_remote_request: RemoteTrialRequest | None = None
         self._active_kind: str | None = None
         self._has_detailed_telemetry = False
@@ -289,16 +294,37 @@ class MainWindow(QMainWindow):
         return tabs
 
     def _build_two_view_tab(self) -> QWidget:
-        """Two photographs into one aligned GLB (F15).
+        """Two cutouts into one aligned GLB (F15).
 
-        No runner is injected here: reconstructing each photograph needs an
-        active Pod (F07), so the panel says so rather than pretending. Wiring
-        it is the next step once the Pod path is proven end to end.
+        The engine is built lazily, on the GUI thread, at click time: it reads
+        the existing-Pod fields above, so a run always uses what is on screen
+        and never a stale copy. Constructing it opens no connection.
         """
         from pixaboost.gui.two_view_view import TwoViewPanel
 
-        self.two_view_panel = TwoViewPanel(runs_root=self.repo_root / "runs")
+        self.two_view_panel = TwoViewPanel(
+            runs_root=self.repo_root / "runs",
+            engine_factory=self._build_two_view_engine,
+        )
         return self.two_view_panel
+
+    def _build_two_view_engine(self) -> TwoViewEngine:
+        """Bind a two-view engine to the Pod described by the fields, right now."""
+        from pixaboost.gui.two_view_adapter import ExistingPodTwoViewEngine, PodSettings
+
+        return ExistingPodTwoViewEngine(
+            self.repo_root,
+            PodSettings(
+                host=self.gpu_host_edit.text().strip(),
+                username=self.gpu_user_edit.text().strip(),
+                private_key_path=Path(self.gpu_key_edit.text()).expanduser().resolve(),
+                known_hosts_path=Path(self.gpu_known_hosts_edit.text())
+                .expanduser()
+                .resolve(),
+                expected_pixal3d_sha=self.gpu_revision_edit.text().strip(),
+                project_git_sha=self.remote_defaults.project_git_sha,
+            ),
+        )
 
     def _build_segmentation_tab(self) -> QWidget:
         """Click-to-segment panel (F14).
@@ -464,6 +490,7 @@ class MainWindow(QMainWindow):
         self.remote_controller.availability_changed.connect(
             self._on_remote_availability_changed
         )
+        self.two_view_panel.busy_changed.connect(self._on_two_view_busy)
         self._update_action_availability()
 
     @property
@@ -691,11 +718,26 @@ class MainWindow(QMainWindow):
         if self._close_requested and not self.remote_controller.has_pending_workers:
             QTimer.singleShot(0, self.close)
 
+    @pyqtSlot(bool)
+    def _on_two_view_busy(self, _busy: bool) -> None:
+        self._update_action_availability()
+        if self._two_view_close_after_cancel and not self.two_view_panel.is_busy:
+            self._two_view_close_after_cancel = False
+            QTimer.singleShot(0, self.close)
+
     @pyqtSlot()
     def _update_action_availability(self) -> None:
         local_active = self._local_is_active()
         remote_active = self._remote_is_active()
-        active = local_active or remote_active
+        # One Pod, one trial. Two SSH sessions against the same GPU would
+        # interleave two 25-minute reconstructions and bill for both.
+        two_view_active = self.two_view_panel.is_running
+        self.two_view_panel.set_blocked(
+            "Un autre essai est en cours : attends qu'il se termine."
+            if local_active or remote_active
+            else ""
+        )
+        active = local_active or remote_active or two_view_active
         self.command_combo.setEnabled(not active)
         self.start_button.setEnabled(not active and self.controller.can_start)
         self.cancel_button.setEnabled(
@@ -980,6 +1022,31 @@ class MainWindow(QMainWindow):
                 self._remote_close_after_cancel = True
                 if not self.remote_controller.cancel():
                     self._remote_close_after_cancel = False
+            event.ignore()
+            return
+        if self.two_view_panel.is_busy:
+            # Its worker threads are children of the panel: destroying it while
+            # one runs aborts the process, and a two-view run is billed GPU
+            # time that must not be detached silently either.
+            if self.two_view_panel.is_cancelling:
+                self._two_view_close_after_cancel = True
+                self._status_bar.showMessage(
+                    "Fermeture différée : attente de l'état d'annulation du Pod.",
+                    3000,
+                )
+                event.ignore()
+                return
+            answer = QMessageBox.question(
+                self,
+                "PixaBoost",
+                "Une reconstruction 2 vues est en cours. Demander son arrêt ? "
+                "La fenêtre restera ouverte tant que le Pod n'aura pas confirmé.",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+            if answer is QMessageBox.StandardButton.Yes:
+                self._two_view_close_after_cancel = True
+                self.two_view_panel.cancel()
             event.ignore()
             return
         super().closeEvent(event)

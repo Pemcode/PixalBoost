@@ -100,23 +100,60 @@ oublie.
 
 ## Utilisation
 
-Onglet **Reconstruction 2 vues** de `uv run pixaboost-gui` : deux champs, deux `Parcourir…`, un
-bouton. Le bouton reste inactif tant que les deux photos ne sont pas choisies, refuse deux fois
-la meme image, et refuse un fichier absent — le tout avant de depenser quoi que ce soit.
+Onglet **Reconstruction 2 vues** de `uv run pixaboost-gui`.
+
+**L'entree est une decoupe RGBA, pas une photo.** Passe d'abord par l'onglet
+« Decoupe (SAM 3) » et enregistre `<nom>_cutout.png` pour chacune des deux vues. Le canal alpha
+de ces fichiers est **le masque qui determine la pose** ; un JPEG est refuse en nommant le
+fichier fautif. La raison est en ADR-0016 : le masque juge doit etre le masque utilise.
 
 Prends **face avant et face arriere**, pas deux vues voisines : la pose se deduit d'autant mieux
 que les deux silhouettes different.
+
+### Ce qui se passe quand tu cliques
+
+1. **Preflight local, gratuit.** Les deux alphas sont lus (un mauvais fichier coute zero) et le
+   cache d'artefacts est interroge pour chaque vue.
+2. **Confirmation, seulement s'il manque quelque chose.** La boite nomme les vues absentes du
+   cache et le nombre de reconstructions que cela represente. Un cache complet ne demande rien.
+3. **Reconstruction, une approbation fraiche par photo.** `ExistingPodUseApproval` est a usage
+   unique et expire en 120 s alors qu'une reconstruction dure des dizaines de minutes ; une seule
+   approbation serait refusee sur la seconde vue, apres avoir paye la premiere.
+4. **Recherche de pose, puis ecriture** de `runs/<id>/aligned.glb` et de son manifeste.
+
+Le bouton **Annuler** est actif pendant tout l'essai : une reconstruction pas encore commencee
+n'est jamais achetee. Si l'etat du Pod ne peut pas etre confirme, le panneau le dit au lieu de se
+taire. Fermer la fenetre pendant un essai est refuse — les threads sont enfants du panneau, et
+une reconstruction en cours est du temps GPU facture.
+
+**Un seul essai a la fois.** L'essai local, l'essai mono-vue et l'essai 2 vues s'excluent
+mutuellement : deux sessions SSH sur le meme GPU entrelaceraient deux reconstructions et
+factureraient les deux.
+
+## Ou vit quoi
+
+| Module | Role |
+|---|---|
+| `core/pose_search.py` | la recherche elle-meme, CPU pur, deterministe |
+| `core/segmentation.py` | `mask_from_rgba` — l'alpha relu au seuil de Pixal3D |
+| `backends/images.py` | lecture du fichier, EXIF applique ; aucune logique |
+| `backends/glb.py` | chargement et ecriture des maillages places |
+| `trials/two_view.py` | orchestration + manifeste ; `reconstruct` et `mask_of` sont **injectes** |
+| `gui/two_view_adapter.py` | le cablage reel : cache-first, approbation, annulation |
+| `gui/two_view_view.py` | le panneau ; ne decide jamais de depenser |
 
 ## Ce que F15 ne fait pas
 
 - **Aucune fusion, aucune sculpture, aucun score de confiance par voxel.** Contrainte n°11.
 - **Aucune echelle absolue.** Une cote au pied a coulisse la fixe ; rien de monoculaire ne le fait.
-- **Aucun bout en bout verifie.** Reconstruire chaque photo exige un Pod actif, donc F07. Aucun
-  GLB n'a encore ete produit depuis de vraies photographies.
+- **Aucun bout en bout verifie.** Le moteur est cable et teste transport substitue, mais
+  reconstruire chaque photo exige un Pod actif, donc F07. **Aucun GLB n'a encore ete produit
+  depuis de vraies photographies.**
 
 ## Verification F15
 
 ```powershell
 uv run pytest -q tests/unit/test_pose_search.py tests/unit/test_two_view_trial.py `
-  tests/integration/test_gui_two_view.py
+  tests/unit/test_two_view_adapter.py tests/unit/test_images_backend.py `
+  tests/unit/test_segmentation.py tests/integration/test_gui_two_view.py
 ```

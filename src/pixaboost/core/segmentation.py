@@ -18,6 +18,11 @@ from scipy import ndimage
 BoolArray = np.ndarray
 UInt8Array = np.ndarray
 
+#: `preprocess_image` in vendor/pixal3d crops to `alpha > 0.8 * 255`. Reading
+#: the mask back at any other threshold would search for a pose against a
+#: silhouette Pixal3D never reconstructed, so both sides cut at the same place.
+PIXAL3D_ALPHA_THRESHOLD = 0.8 * 255
+
 
 def _as_binary_2d(mask: BoolArray) -> BoolArray:
     array = np.asarray(mask)
@@ -116,3 +121,31 @@ def compose_rgba(rgb: UInt8Array, mask: BoolArray) -> UInt8Array:
     rgba[..., :3] = np.where(binary[..., None], colour.astype(np.uint8, copy=False), 0)
     rgba[..., 3] = np.where(binary, 255, 0).astype(np.uint8)
     return rgba
+
+
+def mask_from_rgba(rgba: UInt8Array) -> BoolArray:
+    """Read a cutout's alpha channel back as the object mask.
+
+    The inverse of :func:`compose_rgba`, and the reason the two-view trial asks
+    for cutouts rather than raw photographs: one file then carries both the
+    image Pixal3D reconstructs *and* the silhouette the pose search matches
+    against, with no way for them to disagree.
+
+    Refuses the two cases that carry no mask at all -- no alpha channel, and a
+    uniformly opaque one. Both would otherwise be reconstructed by Pixal3D from
+    its own rembg output while the pose was searched against something else.
+    """
+    array = np.asarray(rgba)
+    if array.ndim != 3 or array.shape[2] != 4:
+        raise ValueError(f"expected an RGBA image with an alpha channel, got shape {array.shape}")
+
+    alpha = array[..., 3]
+    if bool(np.all(alpha == 255)):
+        raise ValueError(
+            "refusing a fully opaque image: it carries no mask, and Pixal3D would "
+            "ignore its alpha and run its own background removal instead"
+        )
+    mask: BoolArray = alpha > PIXAL3D_ALPHA_THRESHOLD
+    if not mask.any():
+        raise ValueError("the alpha channel is empty: there is no object to align")
+    return mask

@@ -26,7 +26,7 @@
 | F09 transport ssh-pod | `passing` | 74 tests, ADR-0012 et ADR-0013 |
 | F11 recalage | `passing` | 25 tests, ADR-0006 et ADR-0007 |
 | F14 segmentation par clic | `passing` | 86 tests, ADR-0014, **modeles substitues partout** |
-| F15 pose 2 vues sans calibration | `passing` | 45 tests, **jamais teste sur vraies photos** |
+| F15 pose 2 vues sans calibration | `passing` | 103 tests, moteur cable ; **jamais teste sur vraies photos** |
 
 ## Le jalon de la session du 2026-08-13
 
@@ -137,8 +137,36 @@ chant *est* une barre. La silhouette seule ne distingue pas un vrai accord d'une
 `pose_iou` ne prouve donc rien seul ; `agreement_iou` et l'inspection du GLB sont les garde-fous.
 Un masque topologiquement impossible (un anneau) fait bien s'effondrer le score.
 
-**Non verifie de bout en bout** : reconstruire chaque photo exige un Pod actif (F07 bloquee).
-Le bouton existe, s'active avec deux photos, et le dit.
+### Le moteur est cable (2026-08-14)
+
+Le bouton n'est plus un ecriteau. `gui/two_view_adapter.py` enchaine deux
+`run_single_view_trial` cache-first sur un Pod existant, et **le masque vient du canal alpha des
+decoupes RGBA** produites par l'onglet SAM 3 (ADR-0016) : un seul fichier porte l'image que
+Pixal3D reconstruit *et* la silhouette contre laquelle la pose est cherchee, donc ils ne peuvent
+pas diverger.
+
+Les assertions qui comptent sont negatives — chacune est un enonce sur l'argent :
+
+| Ce qui est verifie | Ce que ca coute quand ca se produit |
+|---|---|
+| Un JPEG est refuse **en le nommant**, dans le preflight local | zero |
+| Un cache miss sans approbation ne construit **aucun** client | zero |
+| Un second essai identique n'achete rien (contrainte n°9) | zero |
+| Une **approbation fraiche par photo** — l'octroi est a usage unique et expire en 120 s, une reconstruction dure des dizaines de minutes | sinon : la seconde vue est refusee **apres** avoir paye la premiere |
+| Une annulation empeche la seconde reconstruction | ~25 min de 4090 |
+| Un seul essai a la fois : local, mono-vue et 2 vues s'excluent | sinon : deux sessions SSH sur le meme GPU, facturees toutes les deux |
+
+**Deux defauts trouves pendant le cablage, tous deux invisibles en une seule execution du gate.**
+Le premier : un `QThread` d'annulation survivait a son test, et Qt abandonnait le processus —
+le gate echouait environ **une fois sur six**, sans aucun rapport d'echec, dans un test different
+a chaque fois. Le panneau expose maintenant `is_busy`, les tests l'attendent, et
+`MainWindow.closeEvent` refuse de fermer par-dessus un thread vivant. Le second : le message
+« etat du Pod inconnu » etait ecrase par le resultat du run selon l'ordre d'arrivee des deux
+signaux ; il est desormais reapplique quel que soit l'ordre, et volontairement **pas** ajoute a
+un run reussi — les deux reconstructions ont fini, le Pod ne travaille plus.
+
+**Toujours pas de bout en bout reel** : le transport est substitue dans tous les tests. Ce qui
+manque est un Pod actif, donc F07.
 
 ## Ce que la revue de cloture du 2026-08-13 a corrige
 
@@ -242,11 +270,17 @@ suffisant sur des objets simples, le gate F13 se rapproche.
 
 Ensuite, dans l'ordre de valeur :
 1. ~~Confirmer que l'image publiee porte le correctif natten~~ — **fait**, digest GHCR verifie.
-2. Reecrire `tests/e2e/test_smoke_single_view.py` sur `SshPodClient` et l'executer : c'est la
-   seule chose qui debloque F07.
-3. Porter le patch BiRefNet dans `backends/` plutot que dans un script sur le volume.
-4. Batcher l'inference — prerequis economique de F12.
-5. F10, le chemin multi-vues.
+2. ~~Cabler le moteur 2 vues~~ — **fait** le 2026-08-14, transport substitue.
+3. **Le premier essai reel 2 vues.** Il faut, dans cet ordre : decouper les deux photos de
+   `piece_test/front_back/` dans l'onglet SAM 3 (elles sont en JPEG, donc refusees telles
+   quelles), un Pod actif avec hote/port/cle, puis un clic. Compter ~50 min de 4090 pour les
+   deux vues. Le prior « faces opposees » est indispensable ici : les deux silhouettes de cette
+   roue sont le meme cercle.
+4. Reecrire `tests/e2e/test_smoke_single_view.py` sur `SshPodClient` et l'executer : c'est la
+   seule chose qui debloque F07 formellement.
+5. Porter le patch BiRefNet dans `backends/` plutot que dans un script sur le volume.
+6. Batcher l'inference — prerequis economique de F12.
+7. F10, le chemin multi-vues.
 
 ## Jeu de photos reelles disponible
 

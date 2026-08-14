@@ -473,3 +473,41 @@ absolue non plus — une cote mesuree la fixe, rien de monoculaire ne le fait.
 
 **Reexamen.** Quand F07 sera debloquee et qu'un GLB aura ete produit depuis deux vraies
 photographies. C'est la seule mesure qui compte, et elle n'a pas encore eu lieu.
+
+---
+
+## ADR-0016 — L'onglet 2 vues consomme des decoupes RGBA, jamais des photos brutes
+
+**Date** : 2026-08-14 · **Statut** : accepte · **Origine** : F15 (cablage du moteur)
+
+**Decision.** Le panneau « Reconstruction 2 vues » prend en entree les **PNG RGBA produits par
+l'onglet « Decoupe (SAM 3) »**. Le masque qui determine la pose est le canal alpha de ces
+fichiers, lu au seuil exact que Pixal3D applique lui-meme (`alpha > 0.8 * 255`). Une photo sans
+alpha est **refusee en nommant le fichier**, avant toute connexion.
+
+**Raison.** La pose derivee depend entierement du masque. Trois masques etaient possibles :
+
+| Source du masque | Pourquoi rejetee |
+|---|---|
+| Relancer BiRefNet a la volee | ADR-0010 et F14 ont etabli que la detection de saillance ne peut pas lacher la bride de levage : elle produirait un masque *different* de celui que l'utilisateur a valide |
+| Laisser Pixal3D detourer (rembg) | le masque servant a la pose ne serait alors pas celui de la reconstruction ; l'ecart est invisible et la reponse reste confiante |
+| Le canal alpha du fichier d'entree | **retenu** |
+
+Un seul fichier porte alors **l'image que Pixal3D reconstruit et la silhouette contre laquelle la
+pose est cherchee**. Ils ne peuvent pas diverger, et l'essai est reproductible depuis les deux
+fichiers seuls — ce qu'exige la contrainte n°7.
+
+**Le refus est la fonctionnalite.** Inventer un masque pour un JPEG donnerait un alignement
+confiant et faux, apres ~50 minutes de GPU facture. Le message nomme le fichier fautif et renvoie
+a l'onglet de decoupe. Le controle a lieu dans le **preflight local**, donc avant la boite de
+confirmation : une erreur de fichier coute zero.
+
+**Consequence sur l'approbation.** `ExistingPodUseApproval` est a usage unique et expire en 120 s,
+alors qu'une reconstruction dure des dizaines de minutes. Une **approbation fraiche est accordee
+par photo**, a l'instant de sa reconstruction, a partir de la confirmation unique de l'essai. La
+boite de dialogue nomme donc les vues absentes du cache et le nombre de reconstructions
+concernees, plutot qu'un « continuer ? » generique.
+
+**Ce que cela ne fait pas.** Cela ne rend pas le masque correct — SAM peut se tromper, et son
+score d'IoU ne mesure pas la justesse (F14). Cela garantit seulement que **le masque juge est le
+masque utilise**.

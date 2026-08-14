@@ -21,6 +21,7 @@ from pixaboost.core.segmentation import (
     deepest_interior_point,
     largest_connected_component,
     mask_centroid,
+    mask_from_rgba,
 )
 
 
@@ -205,3 +206,53 @@ def test_mismatched_shapes_are_refused() -> None:
     rgb = np.zeros((4, 4, 3), dtype=np.uint8)
     with pytest.raises(ValueError, match="shape"):
         compose_rgba(rgb, np.ones((5, 5), dtype=bool))
+
+
+# --------------------------------------------------------------------------
+# mask_from_rgba -- the alpha channel read back as the object mask (F15)
+# --------------------------------------------------------------------------
+
+
+def cutout(size: int, mask: np.ndarray) -> np.ndarray:
+    return compose_rgba(np.full((size, size, 3), 200, dtype=np.uint8), mask)
+
+
+def test_the_alpha_channel_comes_back_as_the_mask_it_was_written_from() -> None:
+    """Round trip: what SAM approved is what the pose search will see."""
+    mask = annulus(40, (20, 20), 6.0, 16.0)
+
+    assert np.array_equal(mask_from_rgba(cutout(40, mask)), mask)
+
+
+def test_the_threshold_is_the_one_pixal3d_itself_applies() -> None:
+    """`preprocess_image` crops to `alpha > 0.8 * 255`.
+
+    Reading a softer edge than Pixal3D does would search for a pose against a
+    silhouette Pixal3D never reconstructed. Both sides must cut at the same
+    place, so the boundary is pinned rather than left to taste.
+    """
+    rgba = np.zeros((2, 2, 4), dtype=np.uint8)
+    rgba[..., 3] = np.array([[203, 205], [0, 255]], dtype=np.uint8)  # 0.8 * 255 = 204.0
+
+    assert np.array_equal(
+        mask_from_rgba(rgba), np.array([[False, True], [False, True]], dtype=bool)
+    )
+
+
+def test_an_image_without_an_alpha_channel_is_refused() -> None:
+    """A JPEG carries no mask, and guessing one here would hide that."""
+    with pytest.raises(ValueError, match="alpha"):
+        mask_from_rgba(np.zeros((4, 4, 3), dtype=np.uint8))
+
+
+def test_a_fully_opaque_image_is_refused_because_it_carries_no_mask() -> None:
+    """Same trap as `compose_rgba`: Pixal3D would rerun its own rembg."""
+    rgba = np.full((4, 4, 4), 255, dtype=np.uint8)
+    with pytest.raises(ValueError, match="fully opaque"):
+        mask_from_rgba(rgba)
+
+
+def test_a_fully_transparent_image_is_refused() -> None:
+    rgba = np.zeros((4, 4, 4), dtype=np.uint8)
+    with pytest.raises(ValueError, match="empty"):
+        mask_from_rgba(rgba)

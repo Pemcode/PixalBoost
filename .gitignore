@@ -45,8 +45,10 @@ Thumbs.db
 # versionnee ; tout le reste se recalcule a partir d'eux et pese ~30 Mo d'incompressible.
 #   upright/ = EXIF Orientation applique + reduction a 2048 px
 #   preview/ = vignettes PNG carrees
+#   video/   = diaporamas mp4 des 18 vues
 piece_test/upright/
 piece_test/preview/
+piece_test/video/
 piece_upright.tgz
 
 # Captures d'ecran de mise au point de la GUI
